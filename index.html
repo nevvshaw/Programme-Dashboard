@@ -1,0 +1,2408 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Go-Live Readiness Dashboard — Quote Management Programme</title>
+<style>
+  :root{
+    --navy:#272B5D; --navy-deep:#1B1E45; --sky:#36A8E1; --sky-pale:#EAF6FC;
+    --bg:#F3F4F8; --paper:#FFFFFF; --ink:#1F2430; --muted:#6B7280; --border:#E2E5EC;
+    --green:#2E9E5B; --green-bg:#E7F6ED; --amber:#C7861A; --amber-bg:#FBF0DC;
+    --red:#C73E3E; --red-bg:#FBE7E7;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0; background:var(--bg); color:var(--ink); font-family:Calibri,"Segoe UI",Helvetica,Arial,sans-serif; -webkit-font-smoothing:antialiased;}
+
+  .topbar{
+    position:sticky; top:0; z-index:30; background:var(--navy);
+    background-image:linear-gradient(100deg, var(--navy) 0%, var(--navy) 78%, var(--sky) 78%, var(--sky) 100%);
+    color:#fff; padding:14px 24px; display:flex; align-items:center; justify-content:space-between;
+    gap:16px; flex-wrap:wrap; box-shadow:0 2px 10px rgba(0,0,0,.15);
+  }
+  .brand{display:flex; align-items:center; gap:12px;}
+  .brand-mark{height:34px; padding:6px 10px; border-radius:8px; background:#fff; display:flex; align-items:center; justify-content:center; flex-shrink:0; box-shadow:0 1px 3px rgba(0,0,0,.15);}
+  .brand-mark img{height:100%; width:auto; display:block;}
+  .footer-logo{height:16px; width:auto; vertical-align:middle; margin-right:6px;}
+  .brand-text h1{margin:0; font-size:16px; font-weight:700;}
+  .brand-text p{margin:1px 0 0; font-size:11.5px; color:#C7D3EE;}
+  .topbar-controls{display:flex; align-items:center; gap:10px; flex-wrap:wrap;}
+  .tb-field{display:flex; flex-direction:column; gap:2px;}
+  .tb-field label{font-size:10px; text-transform:uppercase; letter-spacing:.5px; color:#BFD4F0; font-weight:700;}
+  select, input[type="text"], input[type="date"], input[type="number"], textarea{
+    font-family:inherit; font-size:13px; padding:7px 9px; border-radius:6px; border:1px solid var(--border); background:#FAFBFD; color:var(--ink);
+  }
+  .topbar select, .topbar input[type="date"]{background:rgba(255,255,255,.95); border:1px solid rgba(255,255,255,.4); min-width:150px;}
+  .btn{border:1px solid rgba(255,255,255,.35); background:rgba(255,255,255,.08); color:#fff; padding:8px 13px; border-radius:6px; font-size:12.5px; font-weight:700; cursor:pointer; font-family:inherit;}
+  .btn:hover{background:rgba(255,255,255,.18);}
+  .btn.primary{background:var(--sky); border-color:var(--sky); color:#0B2436;}
+  .btn.primary:hover{background:#4FB6E8;}
+  .btn:focus-visible, select:focus-visible, input:focus-visible{outline:2px solid var(--sky); outline-offset:2px;}
+  .save-status{font-size:11.5px; color:#C7D3EE; font-weight:600; white-space:nowrap;}
+  .save-status[data-status="saved"]{color:#9BE7B4;}
+  .save-status[data-status="error"]{color:#F3A9A9;}
+  .save-status[data-status="pending"], .save-status[data-status="saving"]{color:#FFE1A8;}
+
+  .layout{display:grid; grid-template-columns:minmax(300px,380px) 1fr; gap:20px; padding:20px; align-items:start; transition:grid-template-columns .2s ease;}
+  @media (max-width:1000px){ .layout{grid-template-columns:1fr;} }
+  .layout.collapsed{grid-template-columns:1fr;}
+  .layout.collapsed .panel{display:none;}
+
+  .panel{background:var(--paper); border:1px solid var(--border); border-radius:10px; position:sticky; top:92px; max-height:calc(100vh - 112px); overflow-y:auto;}
+  @media (max-width:1000px){ .panel{position:static; max-height:none;} }
+  .panel-inner{padding:16px 16px 24px;}
+  .field-group{margin-bottom:20px;}
+  .field-group > h2{font-size:11.5px; text-transform:uppercase; letter-spacing:.7px; color:var(--sky); font-weight:700; margin:0 0 10px; padding-bottom:6px; border-bottom:1px solid var(--border);}
+  label{display:block; font-size:11.5px; font-weight:600; color:var(--muted); margin:8px 0 3px;}
+  label:first-child{margin-top:0;}
+  select, input[type="text"], input[type="number"], textarea{width:100%;}
+  textarea{resize:vertical; min-height:56px; line-height:1.4;}
+  .row-card{border:1px solid var(--border); border-radius:8px; padding:10px; margin-bottom:8px; background:#FCFCFE; position:relative;}
+  .row-grid{display:grid; grid-template-columns:1fr 1fr; gap:8px;}
+  .remove-row{position:absolute; top:7px; right:7px; background:none; border:none; color:#B2364A; font-size:10.5px; font-weight:700; cursor:pointer;}
+  .remove-row:hover{text-decoration:underline;}
+  .add-row{width:100%; padding:8px; border:1px dashed #A8B0C4; border-radius:6px; background:transparent; color:var(--navy); font-weight:700; font-size:12px; cursor:pointer; font-family:inherit;}
+  .add-row:hover{background:var(--sky-pale); border-color:var(--sky);}
+  .hint{font-size:11px; color:var(--muted); line-height:1.4;}
+  .group-label-input{display:block; width:100%; font-size:12.5px; font-weight:700; color:var(--navy); border:none; border-bottom:1px dashed var(--border); background:transparent; padding:2px 0 5px; margin-bottom:8px; font-family:inherit;}
+  .group-label-input:focus{outline:none; border-bottom-color:var(--sky);}
+  .field-label-input{display:block; width:100%; font-size:11.5px; font-weight:600; color:var(--muted); border:none; background:transparent; padding:0; margin:8px 0 3px; font-family:inherit;}
+  .field-label-input:focus{outline:1px dashed var(--sky); outline-offset:2px;}
+  .row-card.removed-group{opacity:.65;}
+  .section-card{border:1px solid var(--sky); border-radius:8px; padding:10px; margin-bottom:12px; background:#FCFCFE; position:relative;}
+  .section-card .remove-section{position:absolute; top:7px; right:7px; background:none; border:none; color:#B2364A; font-size:10.5px; font-weight:700; cursor:pointer;}
+  .section-card .remove-section:hover{text-decoration:underline;}
+  .section-card .type-tag{font-size:10px; text-transform:uppercase; letter-spacing:.4px; color:var(--sky); font-weight:700; margin-bottom:6px; display:block;}
+  .sub-row-card{border:1px solid var(--border); border-radius:6px; padding:8px; margin:6px 0; background:#fff; position:relative;}
+  .sub-row-card .remove-subrow{position:absolute; top:5px; right:5px; background:none; border:none; color:#B2364A; font-size:10px; font-weight:700; cursor:pointer;}
+  .add-subrow{width:100%; padding:6px; border:1px dashed #A8B0C4; border-radius:5px; background:transparent; color:var(--navy); font-weight:700; font-size:11px; cursor:pointer; font-family:inherit; margin-top:4px;}
+  .add-subrow:hover{background:var(--sky-pale); border-color:var(--sky);}
+
+  .dash{display:flex; flex-direction:column; gap:18px;}
+  .dash-head{background:var(--paper); border:1px solid var(--border); border-radius:10px; padding:18px 22px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;}
+  .dash-head h2{margin:0 0 3px; font-size:19px; color:var(--navy);}
+  .dash-head p{margin:0; font-size:12px; color:var(--muted);}
+  .rag-badge{display:inline-flex; align-items:center; gap:7px; padding:6px 14px; border-radius:20px; font-weight:700; font-size:12.5px;}
+  .rag-badge.g{background:var(--green-bg); color:var(--green);} .rag-badge.a{background:var(--amber-bg); color:var(--amber);} .rag-badge.r{background:var(--red-bg); color:var(--red);}
+  .rag-badge .dot{width:8px; height:8px; border-radius:50%; background:currentColor;}
+
+  .kpi-grid{display:grid; grid-template-columns:repeat(6,1fr); gap:14px;}
+  @media (max-width:1300px){ .kpi-grid{grid-template-columns:repeat(3,1fr);} }
+  @media (max-width:640px){ .kpi-grid{grid-template-columns:repeat(2,1fr);} }
+  .kpi-card{background:var(--paper); border:1px solid var(--border); border-radius:10px; padding:16px; border-top:3px solid var(--sky);}
+  .kpi-card .num{font-size:25px; font-weight:700; color:var(--navy); line-height:1.1;}
+  .kpi-card .lbl{font-size:10.5px; text-transform:uppercase; letter-spacing:.4px; color:var(--muted); font-weight:700; margin-top:4px;}
+  .kpi-card .sub{font-size:11px; color:var(--muted); margin-top:6px; line-height:1.4;}
+  .kpi-card.warn{border-top-color:var(--amber);} .kpi-card.crit{border-top-color:var(--red);} .kpi-card.good{border-top-color:var(--green);}
+
+  .card{background:var(--paper); border:1px solid var(--border); border-radius:10px; padding:18px 20px;}
+  .card-head{display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; flex-wrap:wrap; gap:10px;}
+  .card-head h3{margin:0; font-size:13.5px; text-transform:uppercase; letter-spacing:.5px; color:var(--navy); font-weight:700;}
+  .card-sub{font-size:11.5px; color:var(--muted); margin:-8px 0 14px;}
+  .filter-select{min-width:150px;}
+
+  table{width:100%; border-collapse:collapse; font-size:12.5px;}
+  th{text-align:left; font-size:10.5px; text-transform:uppercase; letter-spacing:.4px; color:var(--muted); padding:6px 8px; border-bottom:1px solid var(--border);}
+  td{padding:8px; border-bottom:1px solid var(--border); vertical-align:top; line-height:1.42;}
+  tr:last-child td{border-bottom:none;}
+  .empty-note{font-size:12px; color:var(--muted); font-style:italic; padding:10px 0;}
+
+  .pill{display:inline-flex; align-items:center; gap:5px; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:700;}
+  .pill.g{background:var(--green-bg); color:var(--green);} .pill.a{background:var(--amber-bg); color:var(--amber);} .pill.r{background:var(--red-bg); color:var(--red);}
+  .pill .dot{width:6px; height:6px; border-radius:50%; background:currentColor;}
+  .sev{font-weight:700; font-size:11.5px;}
+  .sev.high{color:var(--red);} .sev.medium{color:var(--amber);} .sev.low{color:var(--green);}
+  .sev.p1{color:var(--red);} .sev.p2{color:var(--amber);} .sev.p3{color:var(--muted);}
+
+  .crit-grid{display:grid; grid-template-columns:1fr 1fr; gap:16px;}
+  @media (max-width:820px){ .crit-grid{grid-template-columns:1fr;} }
+  .crit-card{border:1px solid var(--border); border-radius:8px; padding:14px; background:#FCFCFE;}
+  .crit-card h4{margin:0 0 8px; font-size:13px; color:var(--navy);}
+  .crit-card ul{margin:0; padding-left:18px; font-size:12.5px; line-height:1.6; color:#333;}
+
+  .action-grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:12px;}
+  .action-card{border:1px solid var(--border); border-radius:8px; padding:12px; background:#FCFCFE;}
+  .action-card .seq{font-size:11px; font-weight:700; color:var(--sky); text-transform:uppercase;}
+  .action-card h4{margin:4px 0 6px; font-size:13px; color:var(--navy);}
+  .action-card p{margin:0 0 8px; font-size:11.5px; color:var(--muted); line-height:1.4;}
+  .status-pill{font-size:10.5px; font-weight:700; padding:3px 9px; border-radius:12px; display:inline-block;}
+  .status-pill.notstarted{background:#EEF0F5; color:var(--muted);}
+  .status-pill.inprogress{background:var(--amber-bg); color:var(--amber);}
+  .status-pill.complete{background:var(--green-bg); color:var(--green);}
+  .status-pill.completed{background:var(--green-bg); color:var(--green);}
+  .status-pill.onhold{background:#EFE4F7; color:#7C3AED;}
+  .status-pill.started{background:var(--green-bg); color:var(--green);}
+
+  .gantt{display:grid; grid-template-columns:190px repeat(8,1fr); gap:3px; font-size:11px;}
+  .gantt .hcell{padding:6px 4px; text-align:center; font-weight:700; color:var(--navy); background:var(--sky-pale); border-radius:4px;}
+  .gantt .hcell.current{background:var(--navy); color:#fff;}
+  .gantt .lbl-cell{padding:8px 6px; font-weight:600; color:var(--ink); display:flex; align-items:center;}
+  .gantt .cell{background:#F7F8FB; border-radius:3px; min-height:26px; align-self:center;}
+  .gantt .bar{background:var(--sky); border-radius:4px; height:26px; align-self:center; display:flex; align-items:center; padding:0 8px; color:#fff; font-size:10.5px; font-weight:700; white-space:nowrap; overflow:hidden; position:relative; z-index:1;}
+  .gantt-legend{display:flex; gap:16px; margin-top:12px; font-size:11px; color:var(--muted); flex-wrap:wrap;}
+
+  .flow{display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-top:6px;}
+  .flow-box{background:var(--sky-pale); border:1px solid var(--sky); border-radius:8px; padding:10px 14px; font-size:12px; font-weight:700; color:var(--navy); text-align:center; flex:1; min-width:110px;}
+  .flow-arrow{color:var(--sky); font-size:16px; font-weight:700;}
+
+  .two-col{display:grid; grid-template-columns:1fr 1fr; gap:18px;}
+  @media (max-width:900px){ .two-col{grid-template-columns:1fr;} }
+  .bullets{margin:0; padding-left:18px; font-size:12.5px; line-height:1.7; color:#333;}
+
+  .footer-strip{background:var(--sky-pale); border:1px solid var(--border); border-radius:10px; padding:12px 20px; font-size:10.5px; color:var(--navy); font-weight:600; display:flex; justify-content:space-between; flex-wrap:wrap; gap:6px;}
+
+  .version-item{display:flex; justify-content:space-between; align-items:center; gap:12px; padding:10px 12px; border:1px solid var(--border); border-radius:8px; margin-bottom:8px; background:#FCFCFE; flex-wrap:wrap;}
+  .version-item .meta{font-size:12px;}
+  .version-item .v-label{font-weight:700; color:var(--navy); display:block;}
+  .version-item .v-date{font-size:11px; color:var(--muted);}
+  .version-item.current{border-color:var(--sky); background:var(--sky-pale);}
+  .version-actions{display:flex; gap:6px; flex-shrink:0;}
+  .btn-mini{border:1px solid var(--border); background:#fff; color:var(--navy); padding:5px 10px; border-radius:5px; font-size:11px; font-weight:700; cursor:pointer; font-family:inherit;}
+  .btn-mini:hover{background:var(--sky-pale); border-color:var(--sky);}
+  .btn-mini.danger{color:#B2364A;}
+  .btn-mini.danger:hover{background:var(--red-bg); border-color:var(--red);}
+
+  @media print{
+    .topbar, .panel{display:none !important;}
+    .layout{display:block; padding:0;}
+    #authGate{display:none !important;}
+  }
+
+  /* ---- Auth gate ----
+     The dashboard is hidden until we positively know the visitor is signed in.
+     This is a "hide by default, reveal on success" rule rather than the reverse:
+     if the auth check is slow, errors, or the script never runs at all, the
+     failure mode is a blank page — never a flash of the real data. */
+  body:not(.app-ready) .topbar,
+  body:not(.app-ready) .layout{display:none !important;}
+
+  #authGate{
+    position:fixed; inset:0; z-index:100; display:flex; align-items:center; justify-content:center;
+    padding:24px; background:var(--navy);
+    background-image:linear-gradient(140deg, var(--navy-deep) 0%, var(--navy) 55%, #2F4E8A 100%);
+  }
+  body.app-ready #authGate{display:none;}
+  .auth-card{
+    width:100%; max-width:380px; background:var(--paper); border-radius:12px; padding:28px;
+    box-shadow:0 12px 40px rgba(0,0,0,.3);
+  }
+  .auth-card .brand-mark{height:38px; margin-bottom:18px; display:inline-flex;}
+  .auth-card h2{margin:0 0 4px; font-size:17px; color:var(--navy);}
+  .auth-card p.auth-sub{margin:0 0 18px; font-size:12px; color:var(--muted); line-height:1.45;}
+  .auth-card label{margin-top:12px;}
+  .auth-card button[type="submit"]{
+    width:100%; margin-top:18px; padding:10px; border:none; border-radius:6px;
+    background:var(--sky); color:#0B2436; font-size:13.5px; font-weight:700; cursor:pointer; font-family:inherit;
+  }
+  .auth-card button[type="submit"]:hover{background:#4FB6E8;}
+  .auth-card button[type="submit"]:disabled{opacity:.6; cursor:default;}
+  .auth-msg{margin-top:14px; font-size:12px; line-height:1.45; min-height:1em;}
+  .auth-msg.error{color:var(--red); font-weight:600;}
+  .auth-msg.info{color:var(--muted);}
+  .auth-foot{margin-top:18px; padding-top:14px; border-top:1px solid var(--border); font-size:11px; color:var(--muted); line-height:1.45;}
+  .auth-checking{text-align:center; color:#C7D3EE; font-size:13px; font-weight:600;}
+  body.auth-resolved .auth-checking{display:none;}
+  body:not(.auth-resolved) .auth-card{display:none;}
+
+  .topbar .user-chip{font-size:11.5px; color:#C7D3EE; font-weight:600; white-space:nowrap;}
+
+  /* ---- Read-only mode (standalone "Share as HTML" exports) ----
+     A shared snapshot has no Supabase connection to save back to, so every
+     control that would imply an edit is hidden rather than left to fail. */
+  body.readonly .panel,
+  body.readonly #btnSaveNow,
+  body.readonly #btnSaveVersion,
+  body.readonly #btnImport,
+  body.readonly #btnReset,
+  body.readonly #btnTogglePanel,
+  body.readonly #btnExportHtml,
+  body.readonly #btnSignOut,
+  body.readonly .version-actions{display:none !important;}
+  body.readonly .layout{grid-template-columns:1fr;}
+  body.readonly #goLiveDate{pointer-events:none; opacity:.75;}
+</style>
+</head>
+<body>
+
+<!-- ============ LOGIN GATE ============
+     Shown until Supabase confirms a session. The dashboard markup below it is
+     hidden by CSS (body:not(.app-ready)) so no data can render before that. -->
+<noscript>
+  <div style="padding:40px; font-family:Calibri,'Segoe UI',Helvetica,Arial,sans-serif; text-align:center;">
+    <h1 style="font-size:18px; color:#272B5D;">JavaScript is required</h1>
+    <p style="color:#6B7280; font-size:13px;">This dashboard needs JavaScript to sign in and load its data. Please enable it and reload.</p>
+  </div>
+</noscript>
+
+<div id="authGate">
+  <div class="auth-checking">Checking sign-in…</div>
+  <form class="auth-card" id="authForm" autocomplete="on">
+    <div class="brand-mark"><img id="authLogo" alt="Felber Consulting"></div>
+    <h2>Go-Live Readiness Dashboard</h2>
+    <p class="auth-sub">Quote Management Programme. Sign in with your administrator account to view or edit the dashboard.</p>
+    <label for="authEmail">Email</label>
+    <input type="email" id="authEmail" name="email" autocomplete="username" required>
+    <label for="authPassword">Password</label>
+    <input type="password" id="authPassword" name="password" autocomplete="current-password" required>
+    <button type="submit" id="authSubmit">Sign in</button>
+    <p class="auth-msg" id="authMsg" role="status" aria-live="polite"></p>
+    <p class="auth-foot">Accounts are created by the programme administrator in Supabase — there is no self-service sign-up.</p>
+  </form>
+</div>
+
+<div class="topbar">
+  <div class="brand">
+    <div class="brand-mark"><img id="brandLogo" alt="Felber Consulting"></div>
+    <div class="brand-text">
+      <h1>Go-Live Readiness Dashboard</h1>
+      <p>Felber Consulting · Quote Management Programme — CPQ Platform Deployment</p>
+    </div>
+  </div>
+  <div class="topbar-controls">
+    <div class="tb-field">
+      <label for="goLiveDate">Target go-live</label>
+      <input type="date" id="goLiveDate">
+    </div>
+    <span id="userChip" class="user-chip"></span>
+    <span id="saveStatus" class="save-status"></span>
+    <button class="btn" id="btnSaveNow">Save now</button>
+    <button class="btn" id="btnSaveVersion">Save weekly version</button>
+    <button class="btn" id="btnExport">Export data</button>
+    <button class="btn" id="btnImport">Import data</button>
+    <input type="file" id="importFileInput" accept="application/json,.json" style="display:none;">
+    <button class="btn primary" id="btnExportHtml" title="Download a single HTML file with today's data baked in — anyone can open it, no import needed">Share as HTML</button>
+    <button class="btn" id="btnTogglePanel">Hide inputs</button>
+    <button class="btn" id="btnReset">Reset to deck data</button>
+    <button class="btn primary" id="btnPrint">Print / Save PDF</button>
+    <button class="btn" id="btnSignOut">Sign out</button>
+  </div>
+</div>
+
+<div class="layout" id="layoutRoot">
+  <!-- ============ EDIT PANEL ============ -->
+  <div class="panel">
+    <div class="panel-inner" id="formPanel">
+
+      <div class="field-group">
+        <h2>Section order</h2>
+        <p class="hint" style="margin-bottom:10px;">Use the arrows to move a section up or down. The dashboard below updates and saves in the order you choose.</p>
+        <div id="sectionOrderRows"></div>
+      </div>
+
+      <div class="field-group">
+        <h2>Core metrics</h2>
+        <p class="hint" style="margin-bottom:10px;">Rename any field to relabel it, or remove a metric to drop its tile from the dashboard. Use Reset to deck data to restore the originals.</p>
+        <div id="coreMetricGroups"></div>
+        <label style="margin-top:14px;">Additional metrics</label>
+        <p class="hint" style="margin:2px 0 10px;">Add your own KPI tiles — name the field and set its value; they appear on the dashboard alongside the metrics above.</p>
+        <div id="customMetricRows"></div>
+        <button class="add-row" data-add="customMetric">+ Add metric</button>
+      </div>
+
+      <div class="field-group">
+        <h2>Readiness scorecard</h2>
+        <div id="readinessRows"></div>
+        <button class="add-row" data-add="readiness">+ Add readiness area</button>
+      </div>
+
+      <div class="field-group">
+        <h2>Critical path</h2>
+        <p class="hint" style="margin-bottom:10px;">The items that gate everything else. Enter each supporting point on its own line.</p>
+        <div id="criticalPathRows"></div>
+        <button class="add-row" data-add="criticalPath">+ Add critical path item</button>
+      </div>
+
+      <div class="field-group">
+        <h2>Recovery plan actions</h2>
+        <div id="actionRows"></div>
+        <button class="add-row" data-add="action">+ Add action</button>
+      </div>
+
+      <div class="field-group">
+        <h2>Programme timeline (Gantt)</h2>
+        <label for="f-ganttTitle">Section title</label>
+        <input type="text" id="f-ganttTitle">
+        <p class="hint" style="margin:4px 0 10px;">Shown as the card heading. It won't change when you adjust the number of weeks below — edit it here if you want to update it.</p>
+        <div class="row-grid">
+          <div>
+            <label for="f-ganttStart">Week 1 start date</label>
+            <input type="date" id="f-ganttStart">
+          </div>
+          <div>
+            <label for="f-ganttWeeks">Number of weeks</label>
+            <input type="number" id="f-ganttWeeks" min="1" max="52">
+          </div>
+        </div>
+        <p class="hint" style="margin:4px 0 10px;">All week columns and dates recalculate from these — set the length to match how far out go-live actually is.</p>
+        <label style="margin-top:14px;">Timeline tracks</label>
+        <div id="ganttTrackRows"></div>
+        <button class="add-row" data-add="ganttTrack">+ Add track</button>
+        <label style="margin-top:14px;">Hard gates</label>
+        <div id="ganttGateRows"></div>
+        <button class="add-row" data-add="ganttGate">+ Add gate</button>
+      </div>
+
+      <div class="field-group">
+        <h2>Risks</h2>
+        <div id="riskRows"></div>
+        <button class="add-row" data-add="risk">+ Add risk</button>
+      </div>
+
+      <div class="field-group">
+        <h2>Issues</h2>
+        <div id="issueRows"></div>
+        <button class="add-row" data-add="issue">+ Add issue</button>
+      </div>
+
+      <div class="field-group">
+        <h2>Open Defects</h2>
+        <p class="hint" style="margin-bottom:10px;">Log every open defect here for review — defect number, description, severity, owner, comments, and target resolution date.</p>
+        <div id="defectRows"></div>
+        <button class="add-row" data-add="defect">+ Add defect</button>
+      </div>
+
+      <div class="field-group">
+        <h2>Assumptions</h2>
+        <div id="assumptionRows"></div>
+        <button class="add-row" data-add="assumption">+ Add assumption</button>
+      </div>
+
+      <div class="field-group">
+        <h2>Dependencies</h2>
+        <div id="dependencyRows"></div>
+        <button class="add-row" data-add="dependency">+ Add dependency</button>
+      </div>
+
+      <div class="field-group">
+        <h2>Systems in scope — discovery</h2>
+        <p class="hint" style="margin-bottom:10px;">Rename a system or mark its discovery as started/not started. Order in this list is the order shown in the flow diagram.</p>
+        <div id="systemRows"></div>
+        <button class="add-row" data-add="system">+ Add system</button>
+      </div>
+
+      <div class="field-group">
+        <h2>Decisions needed this week</h2>
+        <div id="decisionRows"></div>
+        <button class="add-row" data-add="decision">+ Add decision</button>
+      </div>
+
+      <div class="field-group">
+        <h2>Custom sections</h2>
+        <p class="hint" style="margin-bottom:10px;">Add your own sections to the dashboard — a simple list, or a status table.</p>
+        <div id="customSectionRows"></div>
+        <div class="row-grid">
+          <button class="add-row" data-add="customList">+ Add list section</button>
+          <button class="add-row" data-add="customTable">+ Add table section</button>
+        </div>
+      </div>
+
+      <p class="hint">Converted from the "Go-Live Readiness and Recovery Plan" steering deck. Changes save automatically to Supabase and are shared with everyone who has access — use "Save weekly version" to keep a restorable snapshot before a big edit.</p>
+    </div>
+  </div>
+
+  <!-- ============ DASHBOARD ============ -->
+  <div class="dash" id="dash"></div>
+</div>
+
+<!-- Supabase JS client. Loaded from a CDN because this is a single file with no build
+     step. A standalone "Share as HTML" export never uses it (see STANDALONE below), so
+     this failing to load offline degrades to read-only rather than breaking the page. -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.58.0/dist/umd/supabase.js"></script>
+
+<script id="appScript">
+/* ==================== Supabase configuration ==================== */
+const SUPABASE_URL = "https://fzmqaivxgkqvpudzuuej.supabase.co";
+/* This anon key is public by design — it is safe to ship in page source *only* because
+   row-level security grants nothing to the `anon` role. Every policy on `dashboards` and
+   `dashboard_versions` is scoped `to authenticated`, so an unauthenticated request with
+   this key reads and writes nothing. Do not add anon-facing policies without revisiting
+   that assumption. */
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ6bXFhaXZ4Z2txdnB1ZHp1dWVqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUxNTYwODgsImV4cCI6MjEwMDczMjA4OH0.IdYJnzmGFcy2TQ_BcHdur_9n7Ip7XTTR7hunF-n1JBY";
+const DASHBOARD_SLUG = "golive-readiness";
+
+/* A "Share as HTML" export carries a frozen snapshot and no credentials — it must render
+   read-only without ever contacting Supabase, so a recipient can open it straight from
+   disk. Detected before anything else because it changes the whole startup path. */
+const STANDALONE = !!document.getElementById("standaloneFlag");
+
+const sb = (!STANDALONE && window.supabase)
+  ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+  : null;
+
+/* ==================== State (from NUE_Go-Live_Readiness_and_Recovery_Plan deck) ==================== */
+const RAG_LABEL = {g:"Green", a:"Amber", r:"Red"};
+const FELBER_LOGO = "data:image/png;base64,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";
+const STORAGE_KEY = "golive-dashboard-state-v1";
+
+function getDefaultState(){ return {
+  header:{programme:"Quote Management Programme — CPQ Platform Deployment", period:"Steering Review · Week commencing 6 Jul 2026"},
+  goLiveDate:"2026-08-17",
+  metrics:{ uatTotal:77, uatPassed:36, uatFailed:0, defOpen:2, p1Open:1, defClosed:40, defTotal:42, cutStarted:0, cutTotal:23,
+    msOppTotal:23, msOppPassed:8, prodOppTotal:14, prodOppPassed:6, psOppTotal:40, psOppPassed:22 },
+  metricMeta:{
+    uat:{ label:"UAT executed", totalLabel:"Total cases", passedLabel:"Passed", failedLabel:"Failed", removed:false },
+    defOpen:{ label:"Defects open", openLabel:"Open", p1Label:"P1 open", removed:false },
+    defClosed:{ label:"Defects closed", closedLabel:"Closed", totalLabel:"Total logged", removed:false },
+    cutover:{ label:"NUE Cutover tasks started", startedLabel:"Started", totalLabel:"Total", removed:true },
+    msOpp:{ label:"Managed Service Opp Layout", totalLabel:"Test Cases", passedLabel:"Passed", removed:false },
+    prodOpp:{ label:"Product Opp Layout", totalLabel:"Test Cases", passedLabel:"Passed", removed:false },
+    psOpp:{ label:"Professional Services Opp Layout", totalLabel:"Test Cases", passedLabel:"Passed", removed:false }
+  },
+  customMetrics:[],
+
+  readiness:[
+    {area:"UAT & sign-off", rag:"r", evidence:"77 use cases: 36 passed, 4 failed, 58 never executed (75%). Sign-off page blank", mustClear:"Execute or formally descope remaining cases; retest failures; complete signed acceptance.", owner:"UAT lead + exec sponsor"},
+    {area:"Integrations", rag:"g", evidence:"Open  Pricing/Discounts/Total defects in progress. \nKantata fields for MS & PS & Product shadow SKUs not populated / ARR service SKUs not calculating correctly for SKUs - resolved now", mustClear:"Close & retest all financial-integrity defects with documented evidence.", owner:"Vendor tech consultant"},
+    {area:"NUE Cutover plan", rag:"g", evidence:"All 23 tasks 'To Do'; Mar & May windows lapsed; email-domain restriction still open; no rollback step. NUE to share the revised cut-over plan with runbook", mustClear:"Re-baseline date; rehearse runbook with rollback; clear email-domain blocker. Incorporate the activities that Jay and Priyanka need to have in place -and check if there any risks we need to mitigate.", owner:"Joint PMs"},
+    {area:"Training", rag:"a", evidence:"Majority of ~40 enrolled users at 0% on both learning plans; no progress since March.", mustClear:"Role-based completion gate, evidenced by a fresh LMS report before cutover. Training and comms plan currently in progress.", owner:"Enablement lead"},
+    {area:"Security & roles", rag:"g", evidence:"Role matrix defined; 4 users missing accounts; production role deployment not started.", mustClear:"Provision missing users; deploy & verify production permission sets. Confirmed as completed by Jay 21/07", owner:"Platform admin "},
+    {area:"Product Data Transformation", rag:"a", evidence:"Subscriptions intentionally not migrated. Product/pricing load to production not yet run.", mustClear:"Run product/pricing migration with documented reconciliation.", owner:"Vendor solution consultant"}
+  ],
+
+  criticalPath:[
+    {title:"1 · UAT is incomplete and unsigned", points:[
+      "56 of 77 use cases never run — including nearly all product-sale and multi-currency scenarios and most change orders.",
+      "4 executed cases failed and await retest; some 'passed' cases carry unresolved pricing queries.",
+      "Sign-off page is empty: no pass-rate, no defect summary, none of the four required signatures.",
+      "Testing has relied on the same 2–3 people throughout — the throughput bottleneck."
+    ], clear:"Risk-based UAT sprint (weeks 2–5) with named daily testers, then formal sign-off."},
+    {title:"2 · Financial integrity of the ERP sync", points:[
+      "Defects in progress: field-mapping/calculation errors, partial-year subscription pricing, shadow SKUs not updating, quote totals that don't reconcile.",
+      "Anything touching price, margin or totals compounds daily after launch — must be zero-open at go-live.",
+      "Retest-outcome column is blank for nearly all 42 defects — an audit gap to close. Cyderes team to update moving forward."
+    ], clear:"Defect burn-down (weeks 1–3) with retest evidence recorded for every fix."}
+  ],
+
+  recoveryActions:[
+    {seq:1, title:"Governance reset", desc:"Single accountable programme owner (in post), one re-baselined date with sponsor sign-off, weekly go/no-go scorecard.", status:"complete", rag:"g"},
+    {seq:2, title:"Scope freeze", desc:"Change-control gate from today. New CRs raised during testing default to Phase 2 unless the sponsor trades the date.", status:"complete", rag:"g"},
+    {seq:3, title:"Risk-based UAT sprint", desc:"2–3 week timeboxed sprint: must-pass paths per revenue motion per major currency; low-volume scenarios formally descoped.", status:"inprogress", rag:"a"},
+    {seq:4, title:"Defect burn-down", desc:"Financial-integrity defects first (P1 + pricing/totals). Retest evidence recorded for every closure — no evidence, not closed.", status:"inprogress", rag:"a"},
+    {seq:5, title:"Cutover runbook", desc:"Upgrade checklist to a rehearsed runbook: durations, dependencies, checkpoint, rollback, smoke tests. Dry run in sandbox first.", status:"inprogress", rag:"a"},
+    {seq:6, title:"Training gate", desc:"Mandatory live role-based sessions on final configuration. Completion is an entry criterion for go-live.", status:"inprogress", rag:"a"},
+    {seq:7, title:"Hypercare", desc:"Two weeks of daily triage, named vendor escalation path, severity SLAs, legacy quoting held as fallback for first billing cycle.", status:"inprogress", rag:"a"}
+  ],
+
+  ganttStartDate:"2026-07-13",
+  ganttWeeks:8,
+  ganttTitle:"NUE Go-live Re-baselined plan",
+  ganttTracks:[
+    {name:"Governance reset & scope freeze", start:1, end:1},
+    {name:"Cross-app discovery (5 apps)", start:2, end:3},
+    {name:"Defect burn-down (P1 defects + pricing issues)", start:1, end:4},
+    {name:"UAT sprint", start:1, end:4},
+    {name:"Training (final config) + gate ", start:3, end:4},
+    {name:"Cutover Rehearsal / Dry Run (10/08)", start:5, end:5},
+    {name:"Go-live (17/08)", start:6, end:6},
+    {name:"Hypercare (2 wks, into September)", start:6, end:8}
+  ],
+  gates:[ {label:"UAT sign-off gate 03/08", date:"2026-08-03"}, {label:"Go/No Go gate - 07/08", date:"2026-08-10"} ],
+
+  risks:[
+    {risk:"Tester capacity — same 2–3 people carry all testing while also serving other projects", impact:"High", mitigation:"Named UAT team with protected calendar time W2–5; backfill day jobs; daily stand-up."},
+    {risk:"Scope creep recurs — new change requests were still arriving in late June", impact:"High", mitigation:"Scope freeze + sponsor-owned change gate; all new CRs default to Phase 2."},
+    {risk:"Another missed date erodes stakeholder confidence and sales-team adoption", impact:"Medium", mitigation:"Only commit dates behind evidenced gates; fortnightly stakeholder comms."},
+    {risk:"Kantata Sandbox Refresh", impact:"Medium", mitigation:"Schedule a refresh of Sandbox to mirror Production. Awaiting confirmation from Thibaut regarding config work inflight"}
+  ],
+  issues:[
+    {issue:"ARR service SKUs not calculating correctly - Tiered Pricing", sev:"P1", rag:"a", progress:"inprogress", action:"NUE Team currently working on this - Derek confirmed that adjusting the tiered discounting %  to allow for rounding to 2 decimal places ahould be acceptable for Go live", comments:""},
+    {issue:"Saving issue/Data Flow with Products", sev:"P1", rag:"r", progress:"notstarted", action:"NUE Team  - this was raised 22/07 by Courtney ", comments:""}
+  ],
+
+  defects:[
+    {defectNo:"", description:"ARR service SKUs not calculating correctly - Tiered Pricing", severity:"P1", owner:"NUE Team", comments:"Derek confirmed that adjusting the tiered discounting % to allow for rounding to 2 decimal places ahould be acceptable for Go live", resolutionDate:""},
+    {defectNo:"", description:"Saving issue/Data Flow with Products", severity:"P1", owner:"NUE Team", comments:"Raised 22/07 by Courtney", resolutionDate:""},
+    {defectNo:"51", description:"Quote/Resale Product Edit Error", severity:"P1", owner:"Stefan Resendes", comments:"Error preventing edits to quotes/resale product SKUs. Stefan deployed a fix Friday morning (\"Editing of resale products should work now\"), but Derek Stroud then hit a new error making further changes the same day. Marked ready for retest Friday evening, but Courtney Fritts reproduced the same error again on the CrowdStrike resale SKU CS.PREVENT.SOLN. Reopened, pending another fix and retest.", resolutionDate:""},
+    {defectNo:"52", description:"Approval Notification and Approver Designation", severity:"P2", owner:"Kwong Yee Cheng", comments:"Need to designate the correct Salesforce approver for each approval step. Meeting scheduled 27 Jul to finalize the approvers list, configuration, and email content. Open, pending meeting/decision.", resolutionDate:""},
+    {defectNo:"53", description:"Ready for retest item logged alongside #51", severity:"P2", owner:"NUE Team", comments:"Marked ready for retest as of Friday evening. No further update or confirmation of pass/fail posted since. Open, pending retest confirmation.", resolutionDate:""},
+    {defectNo:"54", description:"Subscription Rounding (Service SKUs)", severity:"P1", owner:"Derek Stroud", comments:"Newly reported Friday: partial-year subscription terms (e.g. 5 months = 0.41666667 or 1.5833 years) cause rounding issues in NetSuite, affecting both new and co-termed quotes. Quote link added to the defect issue log for troubleshooting. Awaiting Derek's clarification on NetSuite's expected number format. Open, newly logged.", resolutionDate:""}
+  ],
+
+  assumptions:[
+    "Existing subscriptions are not migrated (agreed decision) — new business starts in the new platform; legacy runs off in the old.",
+    "PSA integration remains partner-owned and out of programme scope; recent end-to-end tests passing is representative.",
+    "Low-volume currency scenarios can be descoped from UAT with sponsor sign-off.",
+    "A first-week-of-September go-live is commercially acceptable (no quarter-end or billing-cycle conflict).",
+    "Sandbox remains representative of production configuration through cutover."
+  ],
+  dependencies:[
+    "Vendor: defect fixes, production tenant setup, changeset deployment and migration scripts (owns most cutover tasks).",
+    "PSA partner: stable project-element creation from won opportunities; regression confirmation after CRM flow changes.",
+    "Executive sponsor: availability for descope decisions, UAT sign-off and the W7 Go/No-Go gate.",
+    "Finance: validation of ERP postings during hypercare's first billing cycle."
+  ],
+
+  systemsInScope:[
+    {name:"SKU Catalogue", status:"notstarted"},
+    {name:"CPQ (Nue)", status:"notstarted"},
+    {name:"CRM (Salesforce)", status:"notstarted"},
+    {name:"PSA (Kantata)", status:"notstarted"},
+    {name:"ERP (NetSuite)", status:"notstarted"}
+  ],
+
+  decisions:[
+    {title:"Approve the re-baselined go-live", detail:"Target w/c 12th October date, held behind two hard gates — not a date-for-date's-sake commitment.", status:"Approved"},
+    {title:"Approve the scope freeze", detail:"Pending change requests defer to Phase 2; sponsor owns any exception.", status:"Approved"},
+    {title:"Commit the UAT Team", detail:"Named testers with protected time for weeks 2–5 — relieving pressure on other projects.", status:"Approved"}
+  ],
+
+  customSections:[
+    {id:1, type:"table", title:"Follow up Actions", numbered:true, rows:[
+      {item:"NUE to run the mass update on all products subject to team confirming fields have populated", status:"g", progress:"completed", detail:"Stefan to run a mass update on all products to update all shadow products", owner:"Nev Shawer"},
+      {item:"Follow up with the NUE team on the Blueprint deliverable and the roll back plan and Hypercare for Go live", status:"g", progress:"completed", detail:"MJ to share the configuration document in place.", owner:"Nev Shawer"},
+      {item:"Schedule meeting with Jym's and his team to understand the requirement ", status:"g", progress:"completed", detail:"Prioritised as a Phase 2 deliverable - ability to view the Deal margin accordingly. Spec shared with Derek and comments provided that need to be reviewed", owner:"Nev Shawer/Manjit "},
+      {item:"Confirm if Email Domain Restriction is still a blocking issue ", status:"g", progress:"completed", detail:"Checked with both NUE team and IT team and it was agreed this was an issue and we can close it", owner:"Jayanth K"},
+      {item:"Confirm if provisioning of 4 missing users is still an issue and who the users are", status:"g", progress:"completed", detail:"Jay has confirmed that this has now been resolved", owner:"Jayanth K"},
+      {item:"Vendor Currency vs Opportunity Currency Issue ", status:"g", progress:"completed", detail:"Team confirmed that the issue has now been resolved.", owner:"Nev Shawer/Sheraz/Fady Kassab"},
+      {item:"Training and Comms Plan in Preparation for NUE Go live date 10/08/2026", status:"a", progress:"inprogress", detail:"Create the training and comms plan in line with the October go live date", owner:"Stephanie Gough / Team Leads"},
+      {item:"Finalise Go-live date ", status:"g", progress:"completed", detail:"", owner:"All Team Leads"},
+      {item:"Finalised SKU List to be shared with Alexa and Kantata", status:"a", progress:"inprogress", detail:"Derek confirmed this will be available at the end of July.", owner:"Derek Stroud"},
+      {item:"Arrange a session to review the Annual & Onboarding Price and Deal Margin - Finalise Requirements document", status:"a", progress:"notstarted", detail:"Session required to align the workflow process stakeholders from Professional Services, Managed Services, and Deal Desk before we engage with NUE to develop any features ", owner:"Derek Stroud/Nev Shawer/Jym Ferrier"},
+      {item:"Arrange a session with NUE Jayanth and Piyanks to discuss prod deployment activities and timelines.", status:"g", progress:"completed", detail:"Completed - Meeting to align on cutover activities in preparation for Go-live", owner:"NUE/Priyanka/Jay/Nev"},
+      {item:"Reconcile UAT case counts", status:"r", progress:"notstarted", detail:"Readiness evidence reads '36 passed, 4 failed, 58 never executed' against a 77-case total — the three figures add to 98, not 77. Numbers need correcting before this goes to steering.", owner:"UAT lead"},
+      {item:"Reconcile UAT failed-count mismatch", status:"r", progress:"notstarted", detail:"KPI tile reports 0 UAT failures; readiness narrative reports 4 failed cases awaiting retest. Confirm the true failure count and align both.", owner:"UAT lead"},
+      {item:"Reconcile open-defect count vs KPI tile", status:"r", progress:"notstarted", detail:"KPI tile shows 2 open defects (1 P1); the Open Defects log currently lists 6 open items, 4 of them P1 (ARR SKU calc, Saving/Data Flow, #51 Quote/Resale, #54 Subscription Rounding). Update the top-line metric so it matches the log before steering sees it.", owner:"Nev Shawer"}
+    ]},
+    {id:2, type:"table", title:"ISSUES - CLOSED", rows:[
+      {item:"4 named users have no system account; production roles not yet deployed", status:"g", progress:"completed", detail:"Confirmation that this has now been resolved", owner:"Jayanth"},
+      {item:"Nue App - adding product/resell SKUs > New Nue SKUs aren't carrying over to SF correctly. Fields are not carrying over with \"sister\" SKUs (example: DDR-1UT5-ONPREM-SS)", status:"g", progress:"completed", detail:"Flow updated to resolve the issue and mass update run", owner:"NUE Team"},
+      {item:"Kantata fields for MS & PS & Product shadow SKUs not populated", status:"g", progress:"completed", detail:"Flow updated to resolve the issue and mass update run", owner:"NUE Team"},
+      {item:"Net Payment Terms", status:"g", progress:"completed", detail:"Net Payment Terms values and sort order completed", owner:"NUE/Courtnet"}
+    ]}
+  ],
+
+  sectionOrder:["gantt","kpis","readiness","recoveryActions","risks","customSections","issues","defects","assumptions","dependencies","systemsInScope","decisions","criticalPath"],
+
+  filters:{readiness:"all", risk:"all"},
+
+  // Bump this every time the baked-in default data above is updated with a new
+  // week's numbers. It lets loadState() tell "this browser has a stale save from
+  // an older version of the file" apart from "this browser has today's edits" —
+  // see the version check in loadState() below.
+  generatedAt:"2026-07-27T15:30:00Z"
+};}
+
+let state = getDefaultState();
+let saveTimer = null;
+let initialized = false;
+let lastSavedAt = null;
+
+/* Supabase row identity + optimistic lock. `revision` is whatever we last read from or
+   wrote to the server; a save is only allowed to land on that same revision. */
+let dashboardId = null;
+let revision = null;
+/* Only one write may be in flight at a time. Without this, two overlapping saves can
+   land out of order and the older document wins — the classic last-write-wins bug that
+   a debounce alone does not prevent. A save requested while one is in flight sets
+   savePending instead, and runs once from the current (by then newer) state. */
+let saveInFlight = false;
+let savePending = false;
+
+function setSaveStatus(status){
+  const el = document.getElementById("saveStatus");
+  if(!el) return;
+  const map = {
+    loading:"Loading dashboard…",
+    defaults:"Showing original deck data — not yet saved",
+    loaded:"Loaded from Supabase",
+    seeded:"Set up in Supabase — this is now the shared copy",
+    stale:"This browser had an older saved version — showing the shared data instead",
+    readonly:"Read-only snapshot — changes are not saved",
+    pending:"Unsaved changes…",
+    saving:"Saving…",
+    saved:"Saved just now",
+    offline:"Offline — kept locally, will save when you're back online",
+    expired:"Signed out — sign in again to save your changes",
+    conflict:"Someone else saved a newer version — reload before editing further",
+    error:"Save failed — kept locally, use “Save now” to retry"
+  };
+  el.textContent = map[status] || "";
+  // The stylesheet only knows four looks (saved / error / pending / saving), so the
+  // richer status vocabulary is mapped down onto those. Anything that isn't a clean
+  // save renders as an error, because it's a problem the user needs to notice.
+  const FAILURES = ["error","offline","expired","conflict"];
+  el.dataset.status = FAILURES.includes(status) ? "error" : status;
+}
+
+/* Local mirror of the last known-good document. This is a backup, not the source of
+   truth: it means a network drop, an expired token or an RLS rejection can never lose
+   work that the previous localStorage-only version would have kept. */
+function cacheLocally(){
+  try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }catch(err){}
+}
+
+/* renderDashboard() ends by calling scheduleSave(), which was free when saving meant a
+   localStorage write. It is now a network write to a document the whole team shares, so
+   re-renders that are not the user editing anything — refreshing the version list,
+   re-rendering after a restore — must not trigger one. Wrap those in withoutSave(). */
+let suppressSave = 0;
+function withoutSave(fn){
+  suppressSave++;
+  try{ return fn(); }
+  finally{ suppressSave--; }
+}
+
+function scheduleSave(){
+  if(!initialized || STANDALONE || suppressSave) return;
+  setSaveStatus("pending");
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(saveState, 900);
+}
+
+async function saveState(){
+  clearTimeout(saveTimer);
+  if(STANDALONE || !sb) return;
+  cacheLocally();
+
+  if(saveInFlight){ savePending = true; return; }
+  if(!dashboardId){ setSaveStatus("error"); return; }
+
+  saveInFlight = true;
+  setSaveStatus("saving");
+  try{
+    const nextRevision = (revision || 0) + 1;
+    const { data, error } = await sb
+      .from("dashboards")
+      .update({
+        data: state,
+        generated_at: state.generatedAt || null,
+        updated_at: new Date().toISOString(),
+        updated_by: currentUser ? currentUser.id : null,
+        revision: nextRevision
+      })
+      .eq("id", dashboardId)
+      .eq("revision", revision)   // optimistic lock — see `revision` above
+      .select("revision");
+
+    if(error) throw error;
+
+    if(!data || !data.length){
+      // The WHERE matched nothing: someone else saved since we loaded, so their revision
+      // is now higher than the one we're holding.
+      await handleConflict();
+      return;
+    }
+
+    revision = data[0].revision;
+    lastSavedAt = new Date();
+    setSaveStatus("saved");
+  }catch(err){
+    console.error("Save failed:", err);
+    setSaveStatus(classifySaveError(err));
+  }finally{
+    saveInFlight = false;
+    if(savePending){
+      savePending = false;
+      // Re-run against whatever the state looks like now, not the snapshot we just sent.
+      scheduleSave();
+    }
+  }
+}
+
+/* Someone else saved while this person was editing. The document is one JSON blob, so
+   there is no field-level merge to offer — one version has to win. Refusing to save
+   would strand their edits with no way out, so instead: keep the other version safely in
+   Version history, then let them choose. Their own edits stay in memory and in the local
+   cache the whole time, so declining loses nothing either. */
+async function handleConflict(){
+  setSaveStatus("conflict");
+  try{
+    const { data: current, error } = await sb
+      .from("dashboards")
+      .select("data, revision, updated_at")
+      .eq("id", dashboardId)
+      .single();
+    if(error) throw error;
+
+    const when = new Date(current.updated_at).toLocaleString("en-GB",
+      {day:"2-digit", month:"short", hour:"2-digit", minute:"2-digit"});
+
+    // Park their version before we consider replacing it — nothing is ever lost.
+    await sb.from("dashboard_versions").insert({
+      dashboard_id: dashboardId,
+      label: "Auto-backup — version saved by someone else on " + when,
+      data: current.data,
+      created_by: currentUser ? currentUser.id : null
+    });
+
+    const overwrite = confirm(
+      "Someone else saved this dashboard at " + when + ".\n\n" +
+      "OK — replace it with your version (theirs is kept in Version history)\n" +
+      "Cancel — keep editing; your changes stay in this browser until you save again."
+    );
+    if(!overwrite) return;
+
+    revision = current.revision;   // adopt their revision, then retry once
+    const { data, error: retryError } = await sb
+      .from("dashboards")
+      .update({
+        data: state,
+        generated_at: state.generatedAt || null,
+        updated_at: new Date().toISOString(),
+        updated_by: currentUser ? currentUser.id : null,
+        revision: revision + 1
+      })
+      .eq("id", dashboardId)
+      .eq("revision", revision)
+      .select("revision");
+    if(retryError) throw retryError;
+    if(!data || !data.length){ setSaveStatus("conflict"); return; }
+
+    revision = data[0].revision;
+    lastSavedAt = new Date();
+    setSaveStatus("saved");
+    await fetchHistory();
+    withoutSave(renderDashboard);
+  }catch(err){
+    console.error("Could not resolve the conflict:", err);
+    setSaveStatus(classifySaveError(err));
+  }
+}
+
+/* Turn a failure into something the user can act on. "Save failed" is useless if the
+   real problem is that they were signed out twenty minutes ago. */
+function classifySaveError(err){
+  if(!navigator.onLine) return "offline";
+  const msg = String((err && (err.message || err.error_description)) || "").toLowerCase();
+  if(msg.includes("jwt") || msg.includes("expired") || msg.includes("401")) return "expired";
+  if(msg.includes("row-level security") || msg.includes("policy")) return "expired";
+  if(msg.includes("failed to fetch") || msg.includes("network")) return "offline";
+  return "error";
+}
+
+/* Merge saved/older data onto the current defaults. A plain Object.assign is not
+   safe here: if a save was made before a field (e.g. a new metric group) existed,
+   the old shape would wholesale-overwrite the new default and later code that
+   expects that field would throw, leaving the dashboard blank. Metrics and
+   metricMeta are merged key-by-key instead so new fields always get a default. */
+function mergeState(parsed){
+  const defaults = getDefaultState();
+  const defaultMetrics = defaults.metrics;
+  const defaultMetricMeta = defaults.metricMeta;
+  const defaultSectionOrder = defaults.sectionOrder;
+  // Merge into a *new* object — Object.assign(defaults, ...) would mutate defaults
+  // in place, so a later read of defaults.metricMeta would see the already-overwritten
+  // (stale) value instead of the true defaults.
+  const merged = Object.assign({}, defaults, parsed || {});
+  merged.metrics = Object.assign({}, defaultMetrics, (parsed && parsed.metrics) || {});
+  merged.metricMeta = {};
+  Object.keys(defaultMetricMeta).forEach(gid=>{
+    merged.metricMeta[gid] = Object.assign({}, defaultMetricMeta[gid], (parsed && parsed.metricMeta && parsed.metricMeta[gid]) || {});
+  });
+  if(!Array.isArray(merged.customMetrics)) merged.customMetrics = [];
+  // Reconcile section order: keep only known section ids from the saved order (drops any
+  // that no longer exist), then append any section ids that exist in this version but
+  // weren't in the saved order yet (e.g. a section added after the save was made).
+  const savedOrder = Array.isArray(parsed && parsed.sectionOrder) ? parsed.sectionOrder.filter(id => defaultSectionOrder.includes(id)) : [];
+  const missingIds = defaultSectionOrder.filter(id => !savedOrder.includes(id));
+  merged.sectionOrder = savedOrder.concat(missingIds);
+  // Migrate gates saved under the old {label, week} shape (before gates were
+  // pinned to real dates) into {label, date}, using this file's own start date
+  // to work out which calendar date that week number pointed to.
+  if(Array.isArray(merged.gates)){
+    merged.gates = merged.gates.map(g=>{
+      if(g && !g.date && g.week){
+        const d = new Date(merged.ganttStartDate+"T00:00:00");
+        d.setDate(d.getDate() + (parseInt(g.week)-1)*7);
+        return {label:g.label, date:d.toISOString().slice(0,10)};
+      }
+      return g;
+    });
+  }
+  // A save made before row numbering existed won't have the "numbered" flag
+  // on its Follow up Actions section — carry it over from the current
+  // defaults so numbering still shows up without the user re-adding it.
+  if(Array.isArray(merged.customSections)){
+    merged.customSections = merged.customSections.map(sec=>{
+      const defaultMatch = defaults.customSections.find(d => d.title === sec.title);
+      if(defaultMatch && defaultMatch.numbered && !sec.numbered){
+        return Object.assign({}, sec, {numbered:true});
+      }
+      return sec;
+    });
+  }
+  return merged;
+}
+
+/* If this file was produced by "Share as HTML", it carries a snapshot of the
+   data it was exported with, embedded as JSON in the page itself (see
+   btnExportHtml below). That lets a teammate open the file cold — with no
+   localStorage of their own for it — and still see the data, rather than the
+   original deck defaults. */
+function loadEmbeddedSnapshot(){
+  const el = document.getElementById("embeddedSnapshot");
+  if(!el) return null;
+  try{ return JSON.parse(el.textContent); }catch(err){ return null; }
+}
+
+/* Whatever this browser last held locally, if anything. Used only to seed Supabase the
+   very first time — after that the server row is the single source of truth. */
+function readLocalCache(){
+  try{
+    const raw = localStorage.getItem(STORAGE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  }catch(err){
+    return null;
+  }
+}
+
+/* Read-only startup path for a "Share as HTML" export: no network, no auth, no saving. */
+function loadStandalone(){
+  const embedded = loadEmbeddedSnapshot();
+  state = mergeState(embedded || getDefaultState());
+  return "readonly";
+}
+
+/* Fetch the shared document from Supabase. On the very first run the row doesn't exist
+   yet, so we create it — seeding from this browser's existing localStorage data if there
+   is any, so the user's in-progress edits are carried up rather than thrown away. */
+async function loadState(){
+  const { data, error } = await sb
+    .from("dashboards")
+    .select("id, data, revision")
+    .eq("slug", DASHBOARD_SLUG)
+    .maybeSingle();
+
+  if(error) throw error;
+
+  if(data){
+    dashboardId = data.id;
+    revision = data.revision;
+    state = mergeState(data.data);
+    cacheLocally();
+    return "loaded";
+  }
+
+  // No row yet — seed one.
+  const local = readLocalCache();
+  const seed = mergeState(local || getDefaultState());
+  const { data: inserted, error: insertError } = await sb
+    .from("dashboards")
+    .upsert(
+      {
+        slug: DASHBOARD_SLUG,
+        data: seed,
+        generated_at: seed.generatedAt || null,
+        updated_by: currentUser ? currentUser.id : null
+      },
+      { onConflict: "slug" }
+    )
+    .select("id, data, revision")
+    .single();
+
+  if(insertError) throw insertError;
+
+  dashboardId = inserted.id;
+  revision = inserted.revision;
+  state = mergeState(inserted.data);
+  cacheLocally();
+  return local ? "seeded" : "loaded";
+}
+
+/* ---- Version history (weekly snapshots) ----
+   Snapshots live in Supabase now, so they're shared across the team and survive a
+   browser reset. renderDashboard() builds its markup synchronously, so it reads this
+   in-memory cache; fetchHistory() refreshes the cache and re-renders. */
+let historyCache = [];
+
+function loadHistory(){ return historyCache; }
+
+/* Deliberately does NOT select the `data` column. Every snapshot is a full copy of the
+   whole dashboard document (tens to hundreds of KB); pulling all of them just to render
+   a list of labels would move megabytes on each refresh. The document is fetched lazily,
+   for one version only, at the moment it is actually restored. */
+async function fetchHistory(){
+  if(STANDALONE || !sb || !dashboardId) return;
+  try{
+    const { data, error } = await sb
+      .from("dashboard_versions")
+      .select("id, label, created_at")
+      .eq("dashboard_id", dashboardId)
+      .order("created_at", { ascending:false })
+      .limit(50);
+    if(error) throw error;
+    historyCache = (data || []).map(row => ({
+      id: row.id,
+      label: row.label,
+      timestamp: row.created_at
+    }));
+  }catch(err){
+    console.error("Could not load version history:", err);
+    historyCache = [];
+  }
+}
+
+async function addVersionSnapshot(label){
+  if(!dashboardId) return;
+  try{
+    const { error } = await sb.from("dashboard_versions").insert({
+      dashboard_id: dashboardId,
+      label: label,
+      data: state,
+      created_by: currentUser ? currentUser.id : null
+    });
+    if(error) throw error;
+    await fetchHistory();
+    withoutSave(renderDashboard);
+  }catch(err){
+    console.error("Could not save version:", err);
+    alert("Could not save this version — " + describeError(err));
+  }
+}
+
+async function restoreVersion(id){
+  const snap = historyCache.find(h => h.id === id);
+  if(!snap) return;
+  if(!confirm(`Restore "${snap.label}"? This replaces the shared dashboard for everyone (it won't delete the saved version itself).`)) return;
+  try{
+    const { data, error } = await sb
+      .from("dashboard_versions").select("data").eq("id", id).single();
+    if(error) throw error;
+    // Snapshot where we are first, so a restore is itself undoable.
+    await addVersionSnapshot("Auto-backup before restoring “" + snap.label + "”");
+    state = mergeState(data.data);
+    withoutSave(renderAll);
+    await saveState();
+  }catch(err){
+    console.error("Could not restore version:", err);
+    alert("Could not restore that version — " + describeError(err));
+  }
+}
+
+async function deleteVersion(id){
+  const snap = historyCache.find(h => h.id === id);
+  if(!snap) return;
+  if(!confirm(`Delete the saved version "${snap.label}"? This removes it for everyone and cannot be undone.`)) return;
+  try{
+    const { error } = await sb.from("dashboard_versions").delete().eq("id", id);
+    if(error) throw error;
+    await fetchHistory();
+    withoutSave(renderDashboard);
+  }catch(err){
+    console.error("Could not delete version:", err);
+    alert("Could not delete this version — " + describeError(err));
+  }
+}
+
+/* A save can now fail, which was never possible when this wrote to localStorage. Retry
+   automatically the moment connectivity returns, and don't let the tab close silently on
+   top of work that hasn't landed. */
+window.addEventListener("online", ()=>{
+  if(!STANDALONE && dashboardId && document.getElementById("saveStatus").dataset.status === "error"){
+    saveState();
+  }
+});
+window.addEventListener("beforeunload", (e)=>{
+  if(STANDALONE) return;
+  const status = document.getElementById("saveStatus").dataset.status;
+  if(saveInFlight || savePending || saveTimer || status === "error" || status === "pending"){
+    e.preventDefault();
+    e.returnValue = "";
+  }
+});
+
+/* Plain-English tail for an alert(), so a failure never reads as "something went wrong". */
+function describeError(err){
+  const status = classifySaveError(err);
+  if(status === "offline") return "you appear to be offline. Check your connection and try again.";
+  if(status === "expired") return "your session has expired. Sign out and back in, then try again.";
+  return (err && err.message) ? err.message : "unknown error.";
+}
+
+function formatTimestamp(iso){
+  const d = new Date(iso);
+  return d.toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"}) + " · " +
+    d.toLocaleTimeString("en-GB",{hour:"2-digit",minute:"2-digit"});
+}
+
+/* ---- Input panel collapse ---- */
+const PANEL_STATE_KEY = "golive-dashboard-panel-collapsed";
+
+function setPanelCollapsed(collapsed){
+  const layout = document.getElementById("layoutRoot");
+  const btn = document.getElementById("btnTogglePanel");
+  layout.classList.toggle("collapsed", collapsed);
+  btn.textContent = collapsed ? "Show inputs" : "Hide inputs";
+  try{ localStorage.setItem(PANEL_STATE_KEY, collapsed ? "1" : "0"); }catch(err){}
+}
+
+function esc(str){ return String(str ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+function daysBetween(a,b){ return Math.round((b-a)/86400000); }
+
+/* ==================== Form (left panel) ==================== */
+const METRIC_GROUPS = [
+  { id:"uat", fields:[
+      {key:"uatTotal", metaKey:"totalLabel"},
+      {key:"uatPassed", metaKey:"passedLabel"},
+      {key:"uatFailed", metaKey:"failedLabel"}
+    ]},
+  { id:"defOpen", computed:true, fields:[
+      {key:"defOpen", metaKey:"openLabel"},
+      {key:"p1Open", metaKey:"p1Label"}
+    ]},
+  { id:"defClosed", fields:[
+      {key:"defClosed", metaKey:"closedLabel"},
+      {key:"defTotal", metaKey:"totalLabel"}
+    ]},
+  { id:"cutover", fields:[
+      {key:"cutStarted", metaKey:"startedLabel"},
+      {key:"cutTotal", metaKey:"totalLabel"}
+    ]},
+  { id:"msOpp", fields:[
+      {key:"msOppTotal", metaKey:"totalLabel"},
+      {key:"msOppPassed", metaKey:"passedLabel"}
+    ]},
+  { id:"prodOpp", fields:[
+      {key:"prodOppTotal", metaKey:"totalLabel"},
+      {key:"prodOppPassed", metaKey:"passedLabel"}
+    ]},
+  { id:"psOpp", fields:[
+      {key:"psOppTotal", metaKey:"totalLabel"},
+      {key:"psOppPassed", metaKey:"passedLabel"}
+    ]}
+];
+
+const SECTION_LABELS = {
+  kpis:"Core metrics tiles",
+  readiness:"Go-live readiness scorecard",
+  criticalPath:"Critical path",
+  recoveryActions:"Recovery plan actions",
+  gantt:"Programme timeline (Gantt)",
+  risks:"Risks",
+  issues:"Issues",
+  defects:"Open Defects",
+  assumptions:"Assumptions",
+  dependencies:"Dependencies",
+  systemsInScope:"Systems in scope — discovery",
+  decisions:"Decisions needed this week",
+  customSections:"Custom sections"
+};
+
+function renderSectionOrderRows(){
+  document.getElementById("sectionOrderRows").innerHTML = state.sectionOrder.map((id,i)=>`
+    <div class="row-card" style="display:flex; align-items:center; justify-content:space-between; gap:8px; padding:8px 10px;">
+      <span style="font-weight:700; font-size:12px; color:var(--navy);">${esc(SECTION_LABELS[id] || id)}</span>
+      <div style="display:flex; gap:6px; flex-shrink:0;">
+        <button class="btn-mini" data-move-up="${i}" ${i===0 ? "disabled" : ""}>▲</button>
+        <button class="btn-mini" data-move-down="${i}" ${i===state.sectionOrder.length-1 ? "disabled" : ""}>▼</button>
+      </div>
+    </div>`).join("");
+}
+
+function renderMetricFields(){
+  document.getElementById("coreMetricGroups").innerHTML = METRIC_GROUPS.map(g=>{
+    const meta = state.metricMeta[g.id];
+    if(meta.removed){
+      return `
+        <div class="row-card removed-group">
+          <button class="btn-mini" data-restore-group="${g.id}" style="position:absolute; top:7px; right:7px;">Restore</button>
+          <p class="hint" style="margin:0;"><strong>${esc(meta.label)}</strong> — removed from the dashboard.</p>
+        </div>`;
+    }
+    if(g.computed){
+      // These figures aren't typed in — they're read straight from the Open
+      // Defects section so the KPI tile can never drift from the actual log.
+      const computedValues = { defOpen: state.defects.length, p1Open: state.defects.filter(d=>d.severity==="P1").length };
+      return `
+        <div class="row-card">
+          <button class="remove-row" data-remove-group="${g.id}">Remove</button>
+          <input type="text" class="group-label-input" data-group="${g.id}" data-metafield="label" value="${esc(meta.label)}">
+          <p class="hint" style="margin:4px 0 8px;">Pulled live from the Open Defects section — add, close or edit rows there to change these numbers.</p>
+          <div class="row-grid">
+            ${g.fields.map(f=>`
+              <div>
+                <input type="text" class="field-label-input" data-group="${g.id}" data-metafield="${f.metaKey}" value="${esc(meta[f.metaKey])}">
+                <input type="number" value="${computedValues[f.key]}" disabled title="Auto-calculated from Open Defects">
+              </div>`).join("")}
+          </div>
+        </div>`;
+    }
+    return `
+      <div class="row-card">
+        <button class="remove-row" data-remove-group="${g.id}">Remove</button>
+        <input type="text" class="group-label-input" data-group="${g.id}" data-metafield="label" value="${esc(meta.label)}">
+        <div class="row-grid">
+          ${g.fields.map(f=>`
+            <div>
+              <input type="text" class="field-label-input" data-group="${g.id}" data-metafield="${f.metaKey}" value="${esc(meta[f.metaKey])}">
+              <input type="number" data-group="${g.id}" data-key="${f.key}" value="${state.metrics[f.key]}">
+            </div>`).join("")}
+        </div>
+      </div>`;
+  }).join("");
+  document.getElementById("goLiveDate").value = state.goLiveDate;
+}
+
+function renderCustomMetricRows(){
+  document.getElementById("customMetricRows").innerHTML = state.customMetrics.map((cm,i)=>`
+    <div class="row-card">
+      <button class="remove-row" data-remove="customMetric" data-i="${i}">Remove</button>
+      <div class="row-grid">
+        <div><label>Field name</label>
+          <input type="text" data-field="label" data-type="customMetric" data-i="${i}" value="${esc(cm.label)}">
+        </div>
+        <div><label>Value</label>
+          <input type="number" data-field="value" data-type="customMetric" data-i="${i}" value="${cm.value}">
+        </div>
+      </div>
+    </div>`).join("") || `<p class="hint">No additional metrics yet.</p>`;
+}
+
+function renderCriticalPathRows(){
+  document.getElementById("criticalPathRows").innerHTML = state.criticalPath.map((c,i)=>`
+    <div class="row-card">
+      <button class="remove-row" data-remove="criticalPath" data-i="${i}">Remove</button>
+      <label>Title</label>
+      <input type="text" data-field="title" data-type="criticalPath" data-i="${i}" value="${esc(c.title)}">
+      <label>Supporting points (one per line)</label>
+      <textarea data-field="pointsText" data-type="criticalPath" data-i="${i}" rows="4">${esc(c.points.join("\n"))}</textarea>
+      <label>To clear</label>
+      <input type="text" data-field="clear" data-type="criticalPath" data-i="${i}" value="${esc(c.clear)}">
+    </div>`).join("") || `<p class="hint">No critical path items yet.</p>`;
+}
+
+function renderReadinessRows(){
+  document.getElementById("readinessRows").innerHTML = state.readiness.map((r,i)=>`
+    <div class="row-card">
+      <button class="remove-row" data-remove="readiness" data-i="${i}">Remove</button>
+      <label>Area</label>
+      <input type="text" data-field="area" data-type="readiness" data-i="${i}" value="${esc(r.area)}">
+      <div class="row-grid">
+        <div><label>RAG</label>
+          <select data-field="rag" data-type="readiness" data-i="${i}">
+            <option value="g" ${r.rag==="g"?"selected":""}>Green</option>
+            <option value="a" ${r.rag==="a"?"selected":""}>Amber</option>
+            <option value="r" ${r.rag==="r"?"selected":""}>Red</option>
+          </select>
+        </div>
+        <div><label>Owner</label>
+          <input type="text" data-field="owner" data-type="readiness" data-i="${i}" value="${esc(r.owner)}">
+        </div>
+      </div>
+      <label>Evidence</label>
+      <textarea data-field="evidence" data-type="readiness" data-i="${i}">${esc(r.evidence)}</textarea>
+      <label>Must clear before go-live</label>
+      <textarea data-field="mustClear" data-type="readiness" data-i="${i}">${esc(r.mustClear)}</textarea>
+    </div>`).join("");
+}
+
+const STATUS_OPTS = [["notstarted","Not started"],["inprogress","In progress"],["complete","Complete"]];
+const PROGRESS_OPTS = [["notstarted","Not Started"],["inprogress","In Progress"],["onhold","On Hold"],["completed","Completed"]];
+function renderActionEditRows(){
+  document.getElementById("actionRows").innerHTML = state.recoveryActions.map((a,i)=>`
+    <div class="row-card">
+      <button class="remove-row" data-remove="action" data-i="${i}">Remove</button>
+      <label>Action title</label>
+      <input type="text" data-field="title" data-type="action" data-i="${i}" value="${esc(a.title)}">
+      <label>Description</label>
+      <textarea data-field="desc" data-type="action" data-i="${i}">${esc(a.desc)}</textarea>
+      <div class="row-grid">
+        <div><label>Status</label>
+          <select data-field="status" data-type="action" data-i="${i}">
+            ${STATUS_OPTS.map(([v,l])=>`<option value="${v}" ${a.status===v?"selected":""}>${l}</option>`).join("")}
+          </select>
+        </div>
+        <div><label>RAG</label>
+          <select data-field="rag" data-type="action" data-i="${i}">
+            <option value="g" ${a.rag==="g"?"selected":""}>Green</option>
+            <option value="a" ${a.rag==="a"?"selected":""}>Amber</option>
+            <option value="r" ${a.rag==="r"?"selected":""}>Red</option>
+          </select>
+        </div>
+      </div>
+    </div>`).join("");
+}
+
+function renderRiskRows(){
+  document.getElementById("riskRows").innerHTML = state.risks.map((r,i)=>`
+    <div class="row-card">
+      <button class="remove-row" data-remove="risk" data-i="${i}">Remove</button>
+      <label>Risk</label>
+      <input type="text" data-field="risk" data-type="risk" data-i="${i}" value="${esc(r.risk)}">
+      <div class="row-grid">
+        <div><label>Impact</label>
+          <select data-field="impact" data-type="risk" data-i="${i}">
+            <option ${r.impact==="High"?"selected":""}>High</option>
+            <option ${r.impact==="Medium"?"selected":""}>Medium</option>
+            <option ${r.impact==="Low"?"selected":""}>Low</option>
+          </select>
+        </div>
+      </div>
+      <label>Mitigation</label>
+      <input type="text" data-field="mitigation" data-type="risk" data-i="${i}" value="${esc(r.mitigation)}">
+    </div>`).join("");
+}
+
+function renderIssueRows(){
+  document.getElementById("issueRows").innerHTML = state.issues.map((it,i)=>`
+    <div class="row-card">
+      <div style="position:absolute; top:7px; right:7px; display:flex; align-items:center; gap:8px;">
+        <button class="btn-mini" data-move-item-up="issue" data-i="${i}" ${i===0 ? "disabled" : ""}>▲</button>
+        <button class="btn-mini" data-move-item-down="issue" data-i="${i}" ${i===state.issues.length-1 ? "disabled" : ""}>▼</button>
+        <button class="remove-row" style="position:static;" data-remove="issue" data-i="${i}">Remove</button>
+      </div>
+      <label>Issue</label>
+      <input type="text" data-field="issue" data-type="issue" data-i="${i}" value="${esc(it.issue)}">
+      <div class="row-grid">
+        <div><label>Severity</label>
+          <select data-field="sev" data-type="issue" data-i="${i}">
+            <option ${it.sev==="P1"?"selected":""}>P1</option>
+            <option ${it.sev==="P2"?"selected":""}>P2</option>
+          </select>
+        </div>
+        <div><label>RAG Status</label>
+          <select data-field="rag" data-type="issue" data-i="${i}">
+            <option value="g" ${it.rag==="g"?"selected":""}>Green</option>
+            <option value="a" ${it.rag==="a"?"selected":""}>Amber</option>
+            <option value="r" ${it.rag==="r"?"selected":""}>Red</option>
+          </select>
+        </div>
+      </div>
+      <label>Status</label>
+      <select data-field="progress" data-type="issue" data-i="${i}">
+        ${PROGRESS_OPTS.map(([v,l])=>`<option value="${v}" ${(it.progress||"notstarted")===v?"selected":""}>${l}</option>`).join("")}
+      </select>
+      <label>Action &amp; owner</label>
+      <input type="text" data-field="action" data-type="issue" data-i="${i}" value="${esc(it.action)}">
+      <label>Comments</label>
+      <input type="text" data-field="comments" data-type="issue" data-i="${i}" value="${esc(it.comments||"")}">
+    </div>`).join("");
+}
+
+function renderDefectRows(){
+  document.getElementById("defectRows").innerHTML = state.defects.map((d,i)=>`
+    <div class="row-card">
+      <div style="position:absolute; top:7px; right:7px; display:flex; align-items:center; gap:8px;">
+        <button class="btn-mini" data-move-item-up="defect" data-i="${i}" ${i===0 ? "disabled" : ""}>▲</button>
+        <button class="btn-mini" data-move-item-down="defect" data-i="${i}" ${i===state.defects.length-1 ? "disabled" : ""}>▼</button>
+        <button class="remove-row" style="position:static;" data-remove="defect" data-i="${i}">Remove</button>
+      </div>
+      <div class="row-grid">
+        <div><label>Defect number</label>
+          <input type="text" data-field="defectNo" data-type="defect" data-i="${i}" value="${esc(d.defectNo)}">
+        </div>
+        <div><label>Severity</label>
+          <select data-field="severity" data-type="defect" data-i="${i}">
+            <option ${d.severity==="P1"?"selected":""}>P1</option>
+            <option ${d.severity==="P2"?"selected":""}>P2</option>
+            <option ${d.severity==="P3"?"selected":""}>P3</option>
+          </select>
+        </div>
+      </div>
+      <label>Description</label>
+      <input type="text" data-field="description" data-type="defect" data-i="${i}" value="${esc(d.description)}">
+      <div class="row-grid">
+        <div><label>Owner</label>
+          <input type="text" data-field="owner" data-type="defect" data-i="${i}" value="${esc(d.owner)}">
+        </div>
+        <div><label>Date for resolution</label>
+          <input type="date" data-field="resolutionDate" data-type="defect" data-i="${i}" value="${esc(d.resolutionDate||"")}">
+        </div>
+      </div>
+      <label>Comments</label>
+      <input type="text" data-field="comments" data-type="defect" data-i="${i}" value="${esc(d.comments||"")}">
+    </div>`).join("");
+}
+
+const DECISION_OPTS = ["Pending","Approved","Deferred"];
+function renderDecisionRows(){
+  document.getElementById("decisionRows").innerHTML = state.decisions.map((d,i)=>`
+    <div class="row-card">
+      <button class="remove-row" data-remove="decision" data-i="${i}">Remove</button>
+      <label>Decision</label>
+      <input type="text" data-field="title" data-type="decision" data-i="${i}" value="${esc(d.title)}">
+      <label>Detail</label>
+      <input type="text" data-field="detail" data-type="decision" data-i="${i}" value="${esc(d.detail)}">
+      <label>Status</label>
+      <select data-field="status" data-type="decision" data-i="${i}">
+        ${DECISION_OPTS.map(s=>`<option ${d.status===s?"selected":""}>${s}</option>`).join("")}
+      </select>
+    </div>`).join("");
+}
+
+function renderAssumptionRows(){
+  document.getElementById("assumptionRows").innerHTML = state.assumptions.map((a,i)=>`
+    <div class="row-card">
+      <button class="remove-row" data-remove="assumption" data-i="${i}">Remove</button>
+      <label>Assumption</label>
+      <input type="text" data-type="assumption" data-i="${i}" value="${esc(a)}">
+    </div>`).join("") || `<p class="hint">No assumptions yet.</p>`;
+}
+
+function renderDependencyRows(){
+  document.getElementById("dependencyRows").innerHTML = state.dependencies.map((d,i)=>`
+    <div class="row-card">
+      <button class="remove-row" data-remove="dependency" data-i="${i}">Remove</button>
+      <label>Dependency</label>
+      <input type="text" data-type="dependency" data-i="${i}" value="${esc(d)}">
+    </div>`).join("") || `<p class="hint">No dependencies yet.</p>`;
+}
+
+const SYSTEM_STATUS_OPTS = [["notstarted","Not started"],["started","Started"]];
+function renderSystemRows(){
+  document.getElementById("systemRows").innerHTML = state.systemsInScope.map((sys,i)=>`
+    <div class="row-card">
+      <button class="remove-row" data-remove="system" data-i="${i}">Remove</button>
+      <label>System name</label>
+      <input type="text" data-field="name" data-type="system" data-i="${i}" value="${esc(sys.name)}">
+      <label>Discovery status</label>
+      <select data-field="status" data-type="system" data-i="${i}">
+        ${SYSTEM_STATUS_OPTS.map(([v,l])=>`<option value="${v}" ${sys.status===v?"selected":""}>${l}</option>`).join("")}
+      </select>
+    </div>`).join("") || `<p class="hint">No systems yet.</p>`;
+}
+
+function weekOpts(){
+  return Array.from({length: state.ganttWeeks}, (_, i) => i+1);
+}
+function renderGanttEditRows(){
+  document.getElementById("f-ganttTitle").value = state.ganttTitle;
+  document.getElementById("f-ganttStart").value = state.ganttStartDate;
+  document.getElementById("f-ganttWeeks").value = state.ganttWeeks;
+  const WEEK_OPTS = weekOpts();
+
+  document.getElementById("ganttTrackRows").innerHTML = state.ganttTracks.map((t,i)=>`
+    <div class="row-card">
+      <button class="remove-row" data-remove="ganttTrack" data-i="${i}">Remove</button>
+      <label>Track name</label>
+      <input type="text" data-field="name" data-type="ganttTrack" data-i="${i}" value="${esc(t.name)}">
+      <div class="row-grid">
+        <div><label>Start week</label>
+          <select data-field="start" data-type="ganttTrack" data-i="${i}">
+            ${WEEK_OPTS.map(w=>`<option value="${w}" ${parseInt(t.start)===w?"selected":""}>W${w}</option>`).join("")}
+          </select>
+        </div>
+        <div><label>End week</label>
+          <select data-field="end" data-type="ganttTrack" data-i="${i}">
+            ${WEEK_OPTS.map(w=>`<option value="${w}" ${parseInt(t.end)===w?"selected":""}>W${w}</option>`).join("")}
+          </select>
+        </div>
+      </div>
+    </div>`).join("");
+
+  document.getElementById("ganttGateRows").innerHTML = state.gates.map((g,i)=>`
+    <div class="row-card">
+      <button class="remove-row" data-remove="ganttGate" data-i="${i}">Remove</button>
+      <label>Gate label</label>
+      <input type="text" data-field="label" data-type="ganttGate" data-i="${i}" value="${esc(g.label)}">
+      <label>Date</label>
+      <input type="date" data-field="date" data-type="ganttGate" data-i="${i}" value="${esc(g.date)}">
+    </div>`).join("");
+}
+
+function renderCustomSectionRows(){
+  document.getElementById("customSectionRows").innerHTML = state.customSections.map((sec,si)=>{
+    if(sec.type === "list"){
+      return `
+        <div class="section-card">
+          <button class="remove-section" data-remove-section="${si}">Remove section</button>
+          <span class="type-tag">List section</span>
+          <label>Section title</label>
+          <input type="text" data-sec="${si}" data-secfield="title" value="${esc(sec.title)}">
+          <label>Items (one per line)</label>
+          <textarea data-sec="${si}" data-secfield="itemsText" rows="4">${esc(sec.items.join("\n"))}</textarea>
+        </div>`;
+    }
+    // table type
+    return `
+      <div class="section-card">
+        <button class="remove-section" data-remove-section="${si}">Remove section</button>
+        <span class="type-tag">Table section</span>
+        <label>Section title</label>
+        <input type="text" data-sec="${si}" data-secfield="title" value="${esc(sec.title)}">
+        ${sec.rows.map((row,ri)=>`
+          <div class="sub-row-card">
+            <button class="remove-subrow" data-sec="${si}" data-subrow="${ri}">Remove row</button>
+            <label>${sec.numbered ? `Item ${ri+1}` : "Item"}</label>
+            <input type="text" data-sec="${si}" data-subrow="${ri}" data-subfield="item" value="${esc(row.item)}">
+            <div class="row-grid">
+              <div><label>RAG Status</label>
+                <select data-sec="${si}" data-subrow="${ri}" data-subfield="status">
+                  <option value="g" ${row.status==="g"?"selected":""}>Green</option>
+                  <option value="a" ${row.status==="a"?"selected":""}>Amber</option>
+                  <option value="r" ${row.status==="r"?"selected":""}>Red</option>
+                </select>
+              </div>
+              <div><label>Status</label>
+                <select data-sec="${si}" data-subrow="${ri}" data-subfield="progress">
+                  ${PROGRESS_OPTS.map(([v,l])=>`<option value="${v}" ${(row.progress||"notstarted")===v?"selected":""}>${l}</option>`).join("")}
+                </select>
+              </div>
+            </div>
+            <label>Owner</label>
+            <input type="text" data-sec="${si}" data-subrow="${ri}" data-subfield="owner" value="${esc(row.owner)}">
+            <label>Detail</label>
+            <input type="text" data-sec="${si}" data-subrow="${ri}" data-subfield="detail" value="${esc(row.detail)}">
+          </div>`).join("")}
+        <button class="add-subrow" data-addrow-sec="${si}">+ Add row</button>
+      </div>`;
+  }).join("") || `<p class="hint">No custom sections yet.</p>`;
+}
+
+function renderForm(){
+  renderSectionOrderRows();
+  renderMetricFields();
+  renderCustomMetricRows();
+  renderReadinessRows();
+  renderCriticalPathRows();
+  renderActionEditRows();
+  renderGanttEditRows();
+  renderRiskRows();
+  renderIssueRows();
+  renderDefectRows();
+  renderAssumptionRows();
+  renderDependencyRows();
+  renderSystemRows();
+  renderDecisionRows();
+  renderCustomSectionRows();
+}
+
+/* ==================== Dashboard ==================== */
+function overallRagFromReadiness(){
+  const hasRed = state.readiness.some(r=>r.rag==="r");
+  const hasAmber = state.readiness.some(r=>r.rag==="a");
+  return hasRed ? "r" : (hasAmber ? "a" : "g");
+}
+
+function computeGanttWeeks(){
+  const start = new Date(state.ganttStartDate+"T00:00:00");
+  const weeks = [];
+  for(let w=1; w<=state.ganttWeeks; w++){
+    const d = new Date(start); d.setDate(d.getDate() + (w-1)*7);
+    weeks.push({week:w, label:"W"+w, date: d.toLocaleDateString("en-GB",{day:"numeric", month:"short"}), dateObj:d});
+  }
+  return weeks;
+}
+
+function renderGantt(){
+  const today = new Date(); today.setHours(0,0,0,0);
+  const weeks = computeGanttWeeks();
+  let currentWeek = null;
+  weeks.forEach(w=>{
+    const end = new Date(w.dateObj); end.setDate(end.getDate()+6);
+    if(today >= w.dateObj && today <= end) currentWeek = w.week;
+  });
+
+  const totalRows = 1 + state.ganttTracks.length + 1; // header + tracks + gate row
+  const cells = [];
+
+  // Header row (row 1)
+  cells.push(`<div class="lbl-cell" style="grid-row:1; grid-column:1;"></div>`);
+  weeks.forEach(w=>{
+    cells.push(`<div class="hcell ${currentWeek===w.week?'current':''}" style="grid-row:1; grid-column:${w.week+1};">${w.label}<br><span style="font-weight:400;">${esc(w.date)}</span></div>`);
+  });
+
+  // Track rows (rows 2..N+1)
+  state.ganttTracks.forEach((t,ti)=>{
+    const r = ti + 2;
+    cells.push(`<div class="lbl-cell" style="grid-row:${r}; grid-column:1;">${esc(t.name)}</div>`);
+    for(let w=1; w<=state.ganttWeeks; w++){
+      cells.push(`<div class="cell" style="grid-row:${r}; grid-column:${w+1};"></div>`);
+    }
+    const s = Math.max(1, Math.min(state.ganttWeeks, parseInt(t.start)||1));
+    const e = Math.max(s, Math.min(state.ganttWeeks, parseInt(t.end)||s));
+    cells.push(`<div class="bar" style="grid-row:${r}; grid-column:${s+1} / ${e+2};">${esc(t.name)}</div>`);
+  });
+
+  // Gate row (last row)
+  const gateRow = totalRows;
+  cells.push(`<div class="lbl-cell" style="grid-row:${gateRow}; grid-column:1;"></div>`);
+  weeks.forEach(w=>{
+    // Match gates by their actual date falling inside this week's 7-day span
+    // (rather than a stored week number) so a gate stays pinned to the real
+    // calendar date it represents even if the start date or week count changes.
+    // Use filter (not find) — two gates can legitimately land in the same
+    // 7-day span, and both need to render rather than the second being
+    // silently dropped.
+    const weekEnd = new Date(w.dateObj); weekEnd.setDate(weekEnd.getDate()+6);
+    const matches = state.gates.filter(g=>{
+      const gd = new Date(g.date+"T00:00:00");
+      return gd >= w.dateObj && gd <= weekEnd;
+    });
+    const gateLabels = matches.map(g=>`<div>▲ ${esc(g.label)}</div>`).join("");
+    cells.push(`<div class="cell" style="grid-row:${gateRow}; grid-column:${w.week+1}; min-height:22px; background:transparent;">${matches.length?`<div style="text-align:center; font-size:10px; font-weight:700; color:var(--red); line-height:1.4;">${gateLabels}</div>`:""}</div>`);
+  });
+
+  return `
+    <div class="gantt" style="grid-template-columns:190px repeat(${state.ganttWeeks},1fr); grid-template-rows: auto repeat(${state.ganttTracks.length}, 32px) auto;">
+      ${cells.join("")}
+    </div>
+    <div class="gantt-legend">
+      <span>▲ Hard gate — the date moves if a gate fails; the gate does not.</span>
+    </div>
+  `;
+}
+
+
+function renderDashboard(){
+  const p = state;
+  const m = p.metrics;
+  const today = new Date(); today.setHours(0,0,0,0);
+
+  // "Defects open" is pulled live from the Open Defects section below rather
+  // than typed in separately — the two numbers drifting apart (KPI tile vs.
+  // the actual log) was exactly the reconciliation gap flagged earlier.
+  const defOpenCount = p.defects.length;
+  const defOpenP1Count = p.defects.filter(d=>d.severity==="P1").length;
+
+  const uatExecuted = m.uatPassed + m.uatFailed;
+  const uatExecPct = m.uatTotal>0 ? Math.round((uatExecuted/m.uatTotal)*100) : 0;
+  const defClosedPct = m.defTotal>0 ? Math.round((m.defClosed/m.defTotal)*100) : 0;
+  const cutoverPct = m.cutTotal>0 ? Math.round((m.cutStarted/m.cutTotal)*100) : 0;
+  const msOppPct = m.msOppTotal>0 ? (m.msOppPassed/m.msOppTotal)*100 : 0;
+  const prodOppPct = m.prodOppTotal>0 ? (m.prodOppPassed/m.prodOppTotal)*100 : 0;
+  const psOppPct = m.psOppTotal>0 ? (m.psOppPassed/m.psOppTotal)*100 : 0;
+  const goLive = state.goLiveDate ? new Date(state.goLiveDate+"T00:00:00") : null;
+  const daysToGoLive = goLive ? daysBetween(today, goLive) : null;
+  const decisionsApproved = p.decisions.filter(d=>d.status==="Approved").length;
+  const decisionsTotal = p.decisions.length;
+
+  const overallRag = overallRagFromReadiness();
+
+  const readinessFiltered = p.filters.readiness === "all" ? p.readiness : p.readiness.filter(r=>r.rag===p.filters.readiness);
+  const riskFiltered = p.filters.risk === "all" ? p.risks : p.risks.filter(r=>r.impact===p.filters.risk);
+
+  const sectionHTML = {
+    kpis: () => `
+    <div class="kpi-grid">
+      ${p.metricMeta.uat.removed ? "" : `
+      <div class="kpi-card ${uatExecPct>=70?'good':uatExecPct>=30?'warn':'crit'}">
+        <div class="num">${uatExecPct}%</div>
+        <div class="lbl">${esc(p.metricMeta.uat.label)}</div>
+        <div class="sub">${uatExecuted} of ${m.uatTotal} cases (${m.uatFailed} failed)</div>
+      </div>`}
+      ${p.metricMeta.defOpen.removed ? "" : `
+      <div class="kpi-card ${defOpenP1Count>0?'crit':'good'}">
+        <div class="num">${defOpenCount}</div>
+        <div class="lbl">${esc(p.metricMeta.defOpen.label)}</div>
+        <div class="sub">${defOpenP1Count} P1 (financial-integrity)</div>
+      </div>`}
+      ${p.metricMeta.defClosed.removed ? "" : `
+      <div class="kpi-card ${defClosedPct>=70?'good':defClosedPct>=40?'warn':'crit'}">
+        <div class="num">${defClosedPct}%</div>
+        <div class="lbl">${esc(p.metricMeta.defClosed.label)}</div>
+        <div class="sub">${m.defClosed} of ${m.defTotal} logged</div>
+      </div>`}
+      ${p.metricMeta.cutover.removed ? "" : `
+      <div class="kpi-card ${cutoverPct>0?'warn':'crit'}">
+        <div class="num">${m.cutStarted}/${m.cutTotal}</div>
+        <div class="lbl">${esc(p.metricMeta.cutover.label)}</div>
+        <div class="sub">Plan needs a new baseline</div>
+      </div>`}
+      ${p.metricMeta.msOpp.removed ? "" : `
+      <div class="kpi-card ${msOppPct>=70?'good':msOppPct>=40?'warn':'crit'}">
+        <div class="num">${msOppPct.toFixed(2)}%</div>
+        <div class="lbl">${esc(p.metricMeta.msOpp.label)}</div>
+        <div class="sub">${m.msOppPassed} of ${m.msOppTotal} test cases passed</div>
+      </div>`}
+      ${p.metricMeta.prodOpp.removed ? "" : `
+      <div class="kpi-card ${prodOppPct>=70?'good':prodOppPct>=40?'warn':'crit'}">
+        <div class="num">${prodOppPct.toFixed(2)}%</div>
+        <div class="lbl">${esc(p.metricMeta.prodOpp.label)}</div>
+        <div class="sub">${m.prodOppPassed} of ${m.prodOppTotal} test cases passed</div>
+      </div>`}
+      ${p.metricMeta.psOpp.removed ? "" : `
+      <div class="kpi-card ${psOppPct>=70?'good':psOppPct>=40?'warn':'crit'}">
+        <div class="num">${psOppPct.toFixed(2)}%</div>
+        <div class="lbl">${esc(p.metricMeta.psOpp.label)}</div>
+        <div class="sub">${m.psOppPassed} of ${m.psOppTotal} test cases passed</div>
+      </div>`}
+      <div class="kpi-card ${daysToGoLive!==null && daysToGoLive<14?'crit':daysToGoLive!==null && daysToGoLive<30?'warn':''}">
+        <div class="num">${daysToGoLive!==null ? daysToGoLive : "—"}</div>
+        <div class="lbl">Days to go-live</div>
+        <div class="sub">Behind two hard gates</div>
+      </div>
+      <div class="kpi-card ${decisionsTotal>0 && decisionsApproved===decisionsTotal?'good':'warn'}">
+        <div class="num">${decisionsApproved}/${decisionsTotal}</div>
+        <div class="lbl">Decisions approved</div>
+        <div class="sub">Unlocks the recovery plan</div>
+      </div>
+      ${p.customMetrics.map(cm=>`
+      <div class="kpi-card">
+        <div class="num">${esc(cm.value)}</div>
+        <div class="lbl">${esc(cm.label)}</div>
+      </div>`).join("")}
+    </div>`,
+
+    readiness: () => `
+    <div class="card">
+      <div class="card-head">
+        <h3>Go-live readiness scorecard</h3>
+        <select class="filter-select" id="filterReadiness">
+          <option value="all" ${p.filters.readiness==='all'?'selected':''}>All statuses</option>
+          <option value="r" ${p.filters.readiness==='r'?'selected':''}>Red only</option>
+          <option value="a" ${p.filters.readiness==='a'?'selected':''}>Amber only</option>
+          <option value="g" ${p.filters.readiness==='g'?'selected':''}>Green only</option>
+        </select>
+      </div>
+      <table>
+        <thead><tr><th>Area</th><th>Status</th><th>Evidence</th><th>Must clear</th><th>Owner</th></tr></thead>
+        <tbody>
+          ${readinessFiltered.length ? readinessFiltered.map(r=>`
+            <tr>
+              <td><strong>${esc(r.area)}</strong></td>
+              <td><span class="pill ${r.rag}"><span class="dot"></span>${RAG_LABEL[r.rag]}</span></td>
+              <td>${esc(r.evidence)}</td>
+              <td>${esc(r.mustClear)}</td>
+              <td>${esc(r.owner)}</td>
+            </tr>`).join("") : `<tr><td colspan="5" class="empty-note">No areas match this filter.</td></tr>`}
+        </tbody>
+      </table>
+    </div>`,
+
+    criticalPath: () => `
+    <div class="card">
+      <div class="card-head"><h3>Critical path — the items that gate everything else</h3></div>
+      <div class="crit-grid">
+        ${p.criticalPath.length ? p.criticalPath.map(c=>`
+          <div class="crit-card">
+            <h4>${esc(c.title)}</h4>
+            <ul>${c.points.map(pt=>`<li>${esc(pt)}</li>`).join("")}</ul>
+            <p style="margin-top:8px; font-size:11.5px;"><strong>To clear:</strong> ${esc(c.clear)}</p>
+          </div>`).join("") : `<div class="empty-note">No critical path items yet.</div>`}
+      </div>
+    </div>`,
+
+    recoveryActions: () => {
+      const total = p.recoveryActions.length;
+      const completeCount = p.recoveryActions.filter(a=>a.status==="complete").length;
+      const inProgressCount = p.recoveryActions.filter(a=>a.status==="inprogress").length;
+      const actionsRag = (total>0 && completeCount===total) ? "g" : ((completeCount>0 || inProgressCount>0) ? "a" : "r");
+      return `
+    <div class="card">
+      <div class="card-head">
+        <h3>Recovery plan — seven actions</h3>
+        <span class="rag-badge ${actionsRag}"><span class="dot"></span>${completeCount} of ${total} complete</span>
+      </div>
+      <div class="action-grid">
+        ${p.recoveryActions.map(a=>`
+          <div class="action-card">
+            <div class="seq">Action ${a.seq}</div>
+            <h4>${esc(a.title)}</h4>
+            <p>${esc(a.desc)}</p>
+            <div style="display:flex; gap:6px; flex-wrap:wrap;">
+              <span class="status-pill ${a.status}">${STATUS_OPTS.find(o=>o[0]===a.status)?.[1] || a.status}</span>
+              <span class="pill ${a.rag||'g'}"><span class="dot"></span>${RAG_LABEL[a.rag||'g']}</span>
+            </div>
+          </div>`).join("")}
+      </div>
+    </div>`;
+    },
+
+    gantt: () => `
+    <div class="card">
+      <div class="card-head"><h3>${esc(p.ganttTitle)}</h3></div>
+      ${renderGantt()}
+    </div>`,
+
+    risks: () => `
+    <div class="card">
+      <div class="card-head">
+        <h3>Risks</h3>
+        <select class="filter-select" id="filterRisk">
+          <option value="all" ${p.filters.risk==='all'?'selected':''}>All impacts</option>
+          <option value="High" ${p.filters.risk==='High'?'selected':''}>High only</option>
+          <option value="Medium" ${p.filters.risk==='Medium'?'selected':''}>Medium only</option>
+          <option value="Low" ${p.filters.risk==='Low'?'selected':''}>Low only</option>
+        </select>
+      </div>
+      <table>
+        <thead><tr><th>Risk</th><th>Impact</th><th>Mitigation</th></tr></thead>
+        <tbody>
+          ${riskFiltered.length ? riskFiltered.map(r=>`
+            <tr><td>${esc(r.risk)}</td><td><span class="sev ${r.impact.toLowerCase()}">${esc(r.impact)}</span></td><td>${esc(r.mitigation)}</td></tr>
+          `).join("") : `<tr><td colspan="3" class="empty-note">No risks match this filter.</td></tr>`}
+        </tbody>
+      </table>
+    </div>`,
+
+    issues: () => `
+    <div class="card">
+      <div class="card-head"><h3>Issues — live now</h3></div>
+      <table>
+        <thead><tr><th>Issue</th><th>Sev.</th><th>RAG Status</th><th>Status</th><th>Action &amp; owner</th><th>Comments</th></tr></thead>
+        <tbody>
+          ${p.issues.length ? p.issues.map(it=>`
+            <tr><td>${esc(it.issue)}</td><td><span class="sev ${it.sev.toLowerCase()}">${esc(it.sev)}</span></td><td><span class="pill ${it.rag||'r'}"><span class="dot"></span>${RAG_LABEL[it.rag||'r']}</span></td><td><span class="status-pill ${it.progress||'notstarted'}">${PROGRESS_OPTS.find(o=>o[0]===(it.progress||'notstarted'))?.[1]}</span></td><td>${esc(it.action)}</td><td>${esc(it.comments||"")}</td></tr>
+          `).join("") : `<tr><td colspan="6" class="empty-note">No issues logged.</td></tr>`}
+        </tbody>
+      </table>
+    </div>`,
+
+    defects: () => `
+    <div class="card">
+      <div class="card-head"><h3>Open Defects</h3></div>
+      <table>
+        <thead><tr><th>Defect #</th><th>Description</th><th>Sev.</th><th>Owner</th><th>Comments</th><th>Date for resolution</th></tr></thead>
+        <tbody>
+          ${p.defects.length ? p.defects.map(d=>{
+            const rd = d.resolutionDate ? new Date(d.resolutionDate+"T00:00:00") : null;
+            return `
+            <tr>
+              <td>${esc(d.defectNo) || "—"}</td>
+              <td>${esc(d.description)}</td>
+              <td><span class="sev ${d.severity.toLowerCase()}">${esc(d.severity)}</span></td>
+              <td>${esc(d.owner)}</td>
+              <td>${esc(d.comments||"")}</td>
+              <td>${rd ? esc(rd.toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"})) : "—"}</td>
+            </tr>`;
+          }).join("") : `<tr><td colspan="6" class="empty-note">No open defects logged.</td></tr>`}
+        </tbody>
+      </table>
+    </div>`,
+
+    assumptions: () => `
+    <div class="card">
+      <div class="card-head"><h3>Assumptions</h3></div>
+      ${p.assumptions.length ? `<ul class="bullets">${p.assumptions.map(a=>`<li>${esc(a)}</li>`).join("")}</ul>` : `<div class="empty-note">No assumptions yet.</div>`}
+    </div>`,
+
+    dependencies: () => `
+    <div class="card">
+      <div class="card-head"><h3>Dependencies</h3></div>
+      ${p.dependencies.length ? `<ul class="bullets">${p.dependencies.map(d=>`<li>${esc(d)}</li>`).join("")}</ul>` : `<div class="empty-note">No dependencies yet.</div>`}
+    </div>`,
+
+    systemsInScope: () => `
+    <div class="card">
+      <div class="card-head"><h3>Systems in scope — discovery</h3></div>
+      <p class="card-sub">Most open defects sit at the handoffs between these systems, not inside them.</p>
+      <div class="flow">
+        ${p.systemsInScope.length ? p.systemsInScope.map((sys,idx)=>`
+          <div class="flow-box">
+            <div>${esc(sys.name)}</div>
+            <div style="margin-top:6px;"><span class="status-pill ${sys.status}">${sys.status==="started"?"Started":"Not started"}</span></div>
+          </div>${idx < p.systemsInScope.length-1 ? `<span class="flow-arrow">→</span>` : ""}`).join("") : `<div class="empty-note">No systems yet.</div>`}
+      </div>
+    </div>`,
+
+    decisions: () => `
+    <div class="card">
+      <div class="card-head"><h3>Decisions needed this week</h3></div>
+      <table>
+        <thead><tr><th>Decision</th><th>Detail</th><th>Status</th></tr></thead>
+        <tbody>
+          ${p.decisions.map(d=>`
+            <tr>
+              <td><strong>${esc(d.title)}</strong></td>
+              <td>${esc(d.detail)}</td>
+              <td><span class="pill ${d.status==='Approved'?'g':d.status==='Deferred'?'r':'a'}"><span class="dot"></span>${esc(d.status)}</span></td>
+            </tr>`).join("")}
+        </tbody>
+      </table>
+    </div>`,
+
+    customSections: () => p.customSections.map(sec=>{
+      if(sec.type === "list"){
+        return `
+          <div class="card">
+            <div class="card-head"><h3>${esc(sec.title) || "Untitled section"}</h3></div>
+            ${sec.items.length ? `<ul class="bullets">${sec.items.map(it=>`<li>${esc(it)}</li>`).join("")}</ul>` : `<div class="empty-note">No items yet.</div>`}
+          </div>`;
+      }
+      const numCols = sec.numbered ? 6 : 5;
+      return `
+        <div class="card">
+          <div class="card-head"><h3>${esc(sec.title) || "Untitled section"}</h3></div>
+          <table>
+            <thead><tr>${sec.numbered ? `<th style="width:40px;">#</th>` : ""}<th>Item</th><th>RAG Status</th><th>Status</th><th>Detail</th><th>Owner</th></tr></thead>
+            <tbody>
+              ${sec.rows.length ? sec.rows.map((r,i)=>`
+                <tr>
+                  ${sec.numbered ? `<td>${i+1}</td>` : ""}
+                  <td><strong>${esc(r.item)}</strong></td>
+                  <td><span class="pill ${r.status}"><span class="dot"></span>${RAG_LABEL[r.status]}</span></td>
+                  <td><span class="status-pill ${r.progress||'notstarted'}">${PROGRESS_OPTS.find(o=>o[0]===(r.progress||'notstarted'))?.[1]}</span></td>
+                  <td>${esc(r.detail)}</td>
+                  <td>${esc(r.owner)}</td>
+                </tr>`).join("") : `<tr><td colspan="${numCols}" class="empty-note">No rows yet.</td></tr>`}
+            </tbody>
+          </table>
+        </div>`;
+    }).join("")
+  };
+
+  const orderedSections = state.sectionOrder
+    .filter(id => sectionHTML[id])
+    .map(id => sectionHTML[id]())
+    .join("");
+
+  const dash = document.getElementById("dash");
+  dash.innerHTML = `
+    <div class="dash-head">
+      <div>
+        <h2>${esc(p.header.programme)}</h2>
+        <p>${esc(p.header.period)} · Target go-live: ${goLive ? goLive.toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"}) : "—"}</p>
+      </div>
+      <span class="rag-badge ${overallRag}"><span class="dot"></span>Overall readiness: ${RAG_LABEL[overallRag]}</span>
+    </div>
+
+    ${orderedSections}
+
+    <div class="card">
+      <div class="card-head">
+        <h3>Version history</h3>
+        <span style="font-size:11px; color:var(--muted);">Saved snapshots — kept for weekly reviews</span>
+      </div>
+      ${(() => {
+        const history = loadHistory();
+        if(!history.length) return `<div class="empty-note">${STANDALONE
+          ? "No saved versions were included in this snapshot."
+          : `No weekly versions saved yet. Use "Save weekly version" in the top bar before you make next week's changes.`}</div>`;
+        return history.map(h => `
+          <div class="version-item">
+            <div class="meta">
+              <span class="v-label">${esc(h.label)}</span>
+              <span class="v-date">${formatTimestamp(h.timestamp)}</span>
+            </div>
+            ${STANDALONE ? "" : `<div class="version-actions">
+              <button class="btn-mini" data-restore-version="${h.id}">Restore</button>
+              <button class="btn-mini danger" data-delete-version="${h.id}">Delete</button>
+            </div>`}
+          </div>`).join("");
+      })()}
+    </div>
+
+    <div class="footer-strip">
+      <span><img src="${FELBER_LOGO}" class="footer-logo" alt="Felber Consulting">Felber Consulting — Go-Live Readiness Dashboard</span>
+      <span>Commercial in Confidence — generated ${new Date().toLocaleDateString("en-GB",{day:"2-digit", month:"short", year:"numeric"})}</span>
+    </div>
+  `;
+
+  document.getElementById("filterReadiness").addEventListener("change", e=>{ state.filters.readiness = e.target.value; renderDashboard(); });
+  document.getElementById("filterRisk").addEventListener("change", e=>{ state.filters.risk = e.target.value; renderDashboard(); });
+  // Version ids are Supabase uuids, not the Date.now() numbers they used to be —
+  // Number("a3f2-…") is NaN, which would make every Restore/Delete silently do nothing.
+  dash.querySelectorAll("[data-restore-version]").forEach(btn=>{
+    btn.addEventListener("click", ()=> restoreVersion(btn.dataset.restoreVersion));
+  });
+  dash.querySelectorAll("[data-delete-version]").forEach(btn=>{
+    btn.addEventListener("click", ()=> deleteVersion(btn.dataset.deleteVersion));
+  });
+
+  scheduleSave();
+}
+
+function renderAll(){ renderForm(); renderDashboard(); }
+
+/* ==================== Event wiring ==================== */
+document.getElementById("goLiveDate").addEventListener("change", e=>{ state.goLiveDate = e.target.value; renderDashboard(); });
+document.getElementById("f-ganttTitle").addEventListener("input", e=>{ state.ganttTitle = e.target.value; renderDashboard(); });
+document.getElementById("f-ganttStart").addEventListener("change", e=>{ state.ganttStartDate = e.target.value; renderDashboard(); });
+document.getElementById("f-ganttWeeks").addEventListener("input", e=>{
+  const n = parseInt(e.target.value);
+  state.ganttWeeks = (n>0) ? Math.min(52, n) : state.ganttWeeks;
+  renderForm();
+  renderDashboard();
+});
+
+document.getElementById("btnPrint").addEventListener("click", ()=>window.print());
+
+const panel = document.getElementById("formPanel");
+const ARR_MAP = {readiness:"readiness", action:"recoveryActions", risk:"risks", issue:"issues", defect:"defects", decision:"decisions", ganttTrack:"ganttTracks", ganttGate:"gates", customMetric:"customMetrics", criticalPath:"criticalPath", assumption:"assumptions", dependency:"dependencies", system:"systemsInScope"};
+
+panel.addEventListener("input", e=>{
+  const t = e.target;
+
+  if(t.dataset.sec !== undefined){
+    const sec = state.customSections[parseInt(t.dataset.sec)];
+    if(!sec) return;
+    if(t.dataset.secfield === "title"){ sec.title = t.value; renderDashboard(); return; }
+    if(t.dataset.secfield === "itemsText"){ sec.items = t.value.split("\n").map(s=>s.trim()).filter(Boolean); renderDashboard(); return; }
+    if(t.dataset.subrow !== undefined && t.dataset.subfield){
+      const row = sec.rows[parseInt(t.dataset.subrow)];
+      if(!row) return;
+      row[t.dataset.subfield] = t.value;
+      renderDashboard();
+      return;
+    }
+  }
+
+  if(t.dataset.group !== undefined){
+    const meta = state.metricMeta[t.dataset.group];
+    if(!meta) return;
+    if(t.dataset.metafield){ meta[t.dataset.metafield] = t.value; renderDashboard(); return; }
+    if(t.dataset.key){ state.metrics[t.dataset.key] = parseInt(t.value)||0; renderDashboard(); return; }
+  }
+
+  if(t.dataset.type === "assumption" || t.dataset.type === "dependency"){
+    const arr = state[ARR_MAP[t.dataset.type]];
+    const idx = parseInt(t.dataset.i);
+    if(arr && idx > -1 && idx < arr.length){ arr[idx] = t.value; renderDashboard(); }
+    return;
+  }
+
+  const type = t.dataset.type, field = t.dataset.field, i = t.dataset.i;
+  if(!type || !field || !ARR_MAP[type]) return;
+  const arr = state[ARR_MAP[type]];
+  if(!arr || !arr[i]) return;
+  if(type==="criticalPath" && field==="pointsText"){
+    arr[i].points = t.value.split("\n").map(s=>s.trim()).filter(Boolean);
+    renderDashboard();
+    return;
+  }
+  arr[i][field] = (type==="customMetric" && field==="value") ? (parseInt(t.value)||0) : t.value;
+  renderDashboard();
+});
+
+panel.addEventListener("change", e=>{
+  const t = e.target;
+
+  if(t.tagName === "SELECT" && t.dataset.sec !== undefined && t.dataset.subrow !== undefined && t.dataset.subfield){
+    const sec = state.customSections[parseInt(t.dataset.sec)];
+    const row = sec && sec.rows[parseInt(t.dataset.subrow)];
+    if(row){ row[t.dataset.subfield] = t.value; renderDashboard(); }
+    return;
+  }
+
+  if(t.tagName === "SELECT" && t.dataset.type && ARR_MAP[t.dataset.type]){
+    const arr = state[ARR_MAP[t.dataset.type]];
+    if(!arr || !arr[t.dataset.i]) return;
+    const isWeekField = t.dataset.type==="ganttTrack";
+    arr[t.dataset.i][t.dataset.field] = isWeekField ? parseInt(t.value) : t.value;
+    // Defect severity feeds the computed "Defects open" preview in the panel
+    // (P1 count) — refresh that read-only preview too, not just the dashboard.
+    if(t.dataset.type === "defect") renderMetricFields();
+    renderDashboard();
+    return;
+  }
+
+  if(t.tagName === "INPUT" && t.type === "date" && t.dataset.type && ARR_MAP[t.dataset.type]){
+    const arr = state[ARR_MAP[t.dataset.type]];
+    if(!arr || !arr[t.dataset.i]) return;
+    arr[t.dataset.i][t.dataset.field] = t.value;
+    renderDashboard();
+  }
+});
+
+panel.addEventListener("click", e=>{
+  const moveItemUpBtn = e.target.closest("[data-move-item-up]");
+  if(moveItemUpBtn){
+    const arr = state[ARR_MAP[moveItemUpBtn.dataset.moveItemUp]];
+    const idx = parseInt(moveItemUpBtn.dataset.i);
+    if(arr && idx > 0){
+      [arr[idx-1], arr[idx]] = [arr[idx], arr[idx-1]];
+      renderForm(); renderDashboard();
+    }
+    return;
+  }
+
+  const moveItemDownBtn = e.target.closest("[data-move-item-down]");
+  if(moveItemDownBtn){
+    const arr = state[ARR_MAP[moveItemDownBtn.dataset.moveItemDown]];
+    const idx = parseInt(moveItemDownBtn.dataset.i);
+    if(arr && idx < arr.length-1){
+      [arr[idx+1], arr[idx]] = [arr[idx], arr[idx+1]];
+      renderForm(); renderDashboard();
+    }
+    return;
+  }
+
+  const moveUpBtn = e.target.closest("[data-move-up]");
+  if(moveUpBtn){
+    const idx = parseInt(moveUpBtn.dataset.moveUp);
+    if(idx > 0){
+      const arr = state.sectionOrder;
+      [arr[idx-1], arr[idx]] = [arr[idx], arr[idx-1]];
+      renderForm(); renderDashboard();
+    }
+    return;
+  }
+
+  const moveDownBtn = e.target.closest("[data-move-down]");
+  if(moveDownBtn){
+    const idx = parseInt(moveDownBtn.dataset.moveDown);
+    const arr = state.sectionOrder;
+    if(idx < arr.length-1){
+      [arr[idx+1], arr[idx]] = [arr[idx], arr[idx+1]];
+      renderForm(); renderDashboard();
+    }
+    return;
+  }
+
+  const rmGroupBtn = e.target.closest("[data-remove-group]");
+  if(rmGroupBtn){
+    const meta = state.metricMeta[rmGroupBtn.dataset.removeGroup];
+    if(meta && confirm(`Remove "${meta.label}" from the dashboard? Its values are kept and you can restore it any time.`)){
+      meta.removed = true;
+      renderForm(); renderDashboard();
+    }
+    return;
+  }
+
+  const restoreGroupBtn = e.target.closest("[data-restore-group]");
+  if(restoreGroupBtn){
+    const meta = state.metricMeta[restoreGroupBtn.dataset.restoreGroup];
+    if(meta){ meta.removed = false; renderForm(); renderDashboard(); }
+    return;
+  }
+
+  const addBtn = e.target.closest("[data-add]");
+  if(addBtn){
+    const type = addBtn.dataset.add;
+
+    if(type === "customList" || type === "customTable"){
+      const title = prompt("Title for the new section:", type==="customList" ? "New list section" : "New status table");
+      if(!title) return;
+      if(type === "customList"){
+        state.customSections.push({id:Date.now(), type:"list", title, items:["First item"]});
+      } else {
+        state.customSections.push({id:Date.now(), type:"table", title, rows:[{item:"", detail:"", status:"a", progress:"notstarted", owner:""}]});
+      }
+      renderForm(); renderDashboard();
+      return;
+    }
+
+    const arr = state[ARR_MAP[type]];
+    if(type==="readiness") arr.push({area:"New area", rag:"a", evidence:"", mustClear:"", owner:""});
+    if(type==="action") arr.push({seq:arr.length+1, title:"New action", desc:"", status:"notstarted", rag:"g"});
+    if(type==="risk") arr.push({risk:"", impact:"Medium", mitigation:""});
+    if(type==="issue") arr.push({issue:"", sev:"P2", rag:"r", progress:"notstarted", action:"", comments:""});
+    if(type==="defect") arr.push({defectNo:"", description:"", severity:"P2", owner:"", comments:"", resolutionDate:""});
+    if(type==="decision") arr.push({title:"", detail:"", status:"Pending"});
+    if(type==="ganttTrack") arr.push({name:"New track", start:1, end:1});
+    if(type==="ganttGate") arr.push({label:"New gate", date: state.ganttStartDate});
+    if(type==="customMetric") arr.push({label:"New metric", value:0});
+    if(type==="criticalPath") arr.push({title:"New critical path item", points:["First point"], clear:""});
+    if(type==="assumption") arr.push("New assumption");
+    if(type==="dependency") arr.push("New dependency");
+    if(type==="system") arr.push({name:"New system", status:"notstarted"});
+    renderForm(); renderDashboard();
+    return;
+  }
+
+  const addRowBtn = e.target.closest("[data-addrow-sec]");
+  if(addRowBtn){
+    const sec = state.customSections[parseInt(addRowBtn.dataset.addrowSec)];
+    if(sec && sec.type === "table"){
+      sec.rows.push({item:"", detail:"", status:"a", progress:"notstarted", owner:""});
+      renderForm(); renderDashboard();
+    }
+    return;
+  }
+
+  const rmSectionBtn = e.target.closest("[data-remove-section]");
+  if(rmSectionBtn){
+    if(!confirm("Remove this section from the dashboard? This cannot be undone.")) return;
+    state.customSections.splice(parseInt(rmSectionBtn.dataset.removeSection), 1);
+    renderForm(); renderDashboard();
+    return;
+  }
+
+  const rmSubrowBtn = e.target.closest("[data-subrow]");
+  if(rmSubrowBtn && rmSubrowBtn.classList.contains("remove-subrow")){
+    const sec = state.customSections[parseInt(rmSubrowBtn.dataset.sec)];
+    if(sec){
+      sec.rows.splice(parseInt(rmSubrowBtn.dataset.subrow), 1);
+      renderForm(); renderDashboard();
+    }
+    return;
+  }
+
+  const rmBtn = e.target.closest("[data-remove]");
+  if(rmBtn){
+    const type = rmBtn.dataset.remove, i = parseInt(rmBtn.dataset.i);
+    state[ARR_MAP[type]].splice(i,1);
+    renderForm(); renderDashboard();
+  }
+});
+
+/* ==================== Auth ==================== */
+let currentUser = null;
+let authStarted = false;   // guards against the boot path running twice (see below)
+
+function setAuthMessage(text, kind){
+  const el = document.getElementById("authMsg");
+  el.textContent = text || "";
+  el.className = "auth-msg" + (kind ? " " + kind : "");
+}
+
+/* Reveal the dashboard. Until this runs, CSS keeps .topbar and .layout display:none —
+   which is why nothing can flash before we know who the visitor is. */
+function revealApp(){
+  document.body.classList.add("app-ready");
+}
+
+function showLogin(message, kind){
+  document.body.classList.remove("app-ready");
+  document.body.classList.add("auth-resolved");
+  setAuthMessage(message || "", kind || "info");
+}
+
+async function startSession(session){
+  if(authStarted) return;
+  authStarted = true;
+  currentUser = session.user;
+  document.getElementById("userChip").textContent = session.user.email;
+
+  setSaveStatus("loading");
+  let status;
+  try{
+    status = await loadState();
+  }catch(err){
+    console.error("Could not load the dashboard:", err);
+    authStarted = false;
+    showLogin("Signed in, but the dashboard could not be loaded — " + describeError(err), "error");
+    return;
+  }
+
+  try{
+    renderAll();
+  }catch(err){
+    // Stored data didn't match what this version of the dashboard expects.
+    // Fall back to the original deck data rather than leaving the page blank.
+    console.error("Could not render stored data, falling back to defaults:", err);
+    state = getDefaultState();
+    status = "defaults";
+    renderAll();
+  }
+
+  // Strictly after the first render, exactly as before — otherwise the initial paint
+  // would immediately schedule a network save of data we just read.
+  initialized = true;
+  setSaveStatus(status);
+  revealApp();
+
+  await fetchHistory();
+  withoutSave(renderDashboard);
+}
+
+function endSession(){
+  authStarted = false;
+  currentUser = null;
+  initialized = false;
+  // Don't wipe in-memory edits that were never saved — the user may just need to sign
+  // back in to push them. Keep them in state (and in the local cache) either way.
+  document.getElementById("userChip").textContent = "";
+  showLogin("You've been signed out. Sign in again to continue.", "info");
+}
+
+document.getElementById("authForm").addEventListener("submit", async (e)=>{
+  e.preventDefault();
+  const btn = document.getElementById("authSubmit");
+  const email = document.getElementById("authEmail").value.trim();
+  const password = document.getElementById("authPassword").value;
+
+  btn.disabled = true;
+  setAuthMessage("Signing in…", "info");
+  try{
+    const { error } = await sb.auth.signInWithPassword({ email, password });
+    if(error){
+      setAuthMessage(
+        /invalid login/i.test(error.message)
+          ? "Email or password not recognised."
+          : error.message,
+        "error"
+      );
+      return;
+    }
+    // Clear the password from the DOM immediately on success.
+    document.getElementById("authPassword").value = "";
+    setAuthMessage("");
+  }catch(err){
+    setAuthMessage(
+      navigator.onLine ? "Could not sign in — " + describeError(err)
+                       : "You appear to be offline.",
+      "error"
+    );
+  }finally{
+    btn.disabled = false;
+  }
+});
+
+document.getElementById("btnSignOut").addEventListener("click", async ()=>{
+  if(saveInFlight || savePending || saveTimer){
+    if(!confirm("You may have unsaved changes. Sign out anyway?")) return;
+  }
+  await sb.auth.signOut();
+});
+
+/* ==================== Init ==================== */
+(async function init(){
+  document.getElementById("brandLogo").src = FELBER_LOGO;
+  const authLogo = document.getElementById("authLogo");
+  if(authLogo) authLogo.src = FELBER_LOGO;
+
+  let wasCollapsed = false;
+  try{ wasCollapsed = localStorage.getItem(PANEL_STATE_KEY) === "1"; }catch(err){}
+
+  // A shared snapshot renders straight from its embedded data: no network, no login.
+  if(STANDALONE){
+    document.body.classList.add("readonly");
+    state = mergeState(loadEmbeddedSnapshot() || getDefaultState());
+    renderAll();
+    initialized = true;
+    setSaveStatus("readonly");
+    setPanelCollapsed(true);
+    revealApp();
+    return;
+  }
+
+  setPanelCollapsed(wasCollapsed);
+
+  if(!sb){
+    showLogin("Could not load the Supabase library. Check your connection and reload.", "error");
+    return;
+  }
+
+  // onAuthStateChange fires INITIAL_SESSION on subscribe, which would race getSession()
+  // and run the whole load twice — hence the authStarted guard inside startSession.
+  sb.auth.onAuthStateChange((event, session)=>{
+    if(event === "SIGNED_IN" && session){
+      // Deferred: supabase-js runs this callback while holding its auth lock, and
+      // awaiting another supabase call from inside it deadlocks.
+      setTimeout(()=>startSession(session), 0);
+    }else if(event === "SIGNED_OUT"){
+      setTimeout(endSession, 0);
+    }else if(session && (event === "TOKEN_REFRESHED" || event === "USER_UPDATED")){
+      currentUser = session.user;
+    }
+  });
+
+  try{
+    const { data:{ session } } = await sb.auth.getSession();
+    if(session){
+      await startSession(session);
+    }else{
+      showLogin("");
+    }
+  }catch(err){
+    console.error("Auth check failed:", err);
+    showLogin("Could not reach Supabase — " + describeError(err), "error");
+  }
+})();
+
+document.getElementById("btnSaveNow").addEventListener("click", async (e)=>{
+  e.target.disabled = true;
+  try{ await saveState(); }
+  finally{ e.target.disabled = false; }
+});
+document.getElementById("btnReset").addEventListener("click", async ()=>{
+  // This no longer just discards local edits — it replaces the shared dashboard.
+  if(!confirm("Reset to the original deck data? This replaces the shared dashboard for everyone. A backup is saved to Version history first.")) return;
+  await addVersionSnapshot("Auto-backup before reset to deck data");
+  state = getDefaultState();
+  withoutSave(renderAll);
+  await saveState();
+});
+document.getElementById("btnSaveVersion").addEventListener("click", async (e)=>{
+  const defaultLabel = "Week of " + new Date().toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"});
+  const label = prompt("Label this week's snapshot:", defaultLabel);
+  if(!label) return;
+  e.target.disabled = true;
+  try{
+    await addVersionSnapshot(label);
+    await saveState();
+  }finally{ e.target.disabled = false; }
+});
+document.getElementById("btnTogglePanel").addEventListener("click", ()=>{
+  const layout = document.getElementById("layoutRoot");
+  setPanelCollapsed(!layout.classList.contains("collapsed"));
+});
+
+function downloadFile(filename, mimeType, content){
+  const blob = new Blob([content], {type: mimeType});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+/* Export data (.json) — a lightweight snapshot of just the data, for backing up
+   or moving between browsers/machines using this same dashboard file. */
+document.getElementById("btnExport").addEventListener("click", ()=>{
+  const datePart = new Date().toISOString().slice(0,10);
+  downloadFile(`golive-dashboard-data-${datePart}.json`, "application/json", JSON.stringify(state, null, 2));
+});
+
+/* Import data (.json) — the counterpart to Export data. */
+document.getElementById("btnImport").addEventListener("click", ()=>{
+  document.getElementById("importFileInput").click();
+});
+document.getElementById("importFileInput").addEventListener("change", (e)=>{
+  const file = e.target.files && e.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = async (evt)=>{
+    try{
+      const parsed = JSON.parse(evt.target.result);
+      if(!confirm("Import this data? It replaces the shared dashboard for everyone. A backup is saved to Version history first.")){
+        e.target.value = "";
+        return;
+      }
+      await addVersionSnapshot("Auto-backup before import");
+      state = mergeState(parsed);
+      withoutSave(renderAll);
+      await saveState();
+    }catch(err){
+      console.error("Import failed:", err);
+      alert("Could not read that file. Make sure it's a JSON file exported from this dashboard (via \"Export data\").");
+    }
+    e.target.value = "";
+  };
+  reader.readAsText(file);
+});
+
+/* Share as HTML — bundles the current data into a standalone copy of this
+   dashboard file, so a teammate can just open it (no import step, no shared
+   browser storage needed) and see this exact snapshot. They can keep editing
+   their copy independently from then on. */
+document.getElementById("btnExportHtml").addEventListener("click", ()=>{
+  // Build/replace the snapshot as a real DOM node rather than via string search-
+  // and-replace: our own source code (this very handler) contains the text
+  // 'id="embeddedSnapshot"' as a string literal, which would falsely match a
+  // naive text search and corrupt the main script when replaced. Manipulating
+  // the actual DOM and letting the browser serialize it sidesteps that entirely.
+  const existing = document.getElementById("embeddedSnapshot");
+  if(existing) existing.remove();
+  const snapshotEl = document.createElement("script");
+  snapshotEl.id = "embeddedSnapshot";
+  snapshotEl.type = "application/json";
+  snapshotEl.textContent = JSON.stringify(state).replace(/</g, "\\u003c");
+  // Must be parsed *before* the app script runs (script tags execute as the
+  // parser reaches them), otherwise init() looks for #embeddedSnapshot before
+  // it exists in the DOM and silently finds nothing.
+  const appScript = document.getElementById("appScript");
+  document.body.insertBefore(snapshotEl, appScript);
+
+  // Marks the export as a standalone copy: the app reads this at startup and skips
+  // Supabase and the login gate entirely, rendering the snapshot read-only. Without
+  // it the recipient would be asked to sign in to an account they don't have.
+  const flagEl = document.createElement("script");
+  flagEl.id = "standaloneFlag";
+  flagEl.type = "application/json";
+  flagEl.textContent = "1";
+  document.body.insertBefore(flagEl, appScript);
+
+  // This file is deliberately sent to people outside the programme, and outerHTML
+  // serializes whatever is currently in the DOM — including the signed-in user's email
+  // address in the topbar. Blank it, and drop the login form, before serializing.
+  const userChip = document.getElementById("userChip");
+  const chipText = userChip.textContent;
+  userChip.textContent = "";
+  const gate = document.getElementById("authGate");
+  const gateParent = gate.parentNode;
+  const gateNext = gate.nextSibling;
+  gate.remove();
+  // Password fields are serialized by their attributes, not their live value, but clear
+  // it explicitly rather than relying on that distinction holding.
+  document.getElementById("authPassword").value = "";
+
+  const html = "<!DOCTYPE html>\n" + document.documentElement.outerHTML;
+
+  // Put the live page back exactly as it was.
+  gateParent.insertBefore(gate, gateNext);
+  userChip.textContent = chipText;
+  snapshotEl.remove();
+  flagEl.remove();
+
+  const datePart = new Date().toISOString().slice(0,10);
+  downloadFile(`golive-dashboard-${datePart}.html`, "text/html", html);
+});
+</script>
+</body>
+</html>

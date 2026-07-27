@@ -1,0 +1,8 @@
+.DS_Store
+.claude/
+*.log
+
+# Local data exports produced by the dashboard's "Export data" / "Share as HTML"
+# buttons. These contain a full copy of the programme data — keep them out of git.
+golive-dashboard-data-*.json
+golive-dashboard-*.html
