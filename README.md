@@ -17,8 +17,16 @@ and edits the same copy rather than a personal fork in their own browser.
   the current state: *Unsaved changes…* → *Saving…* → *Saved just now*.
 - **Save weekly version** takes a named snapshot into `dashboard_versions`. Snapshots are
   shared with the team and can be restored or deleted from the Version history card.
-- A local copy is also kept in the browser as a backup, so a dropped connection or an
-  expired session can't lose work in progress.
+
+### Supabase is the only copy
+
+Nothing is mirrored to browser storage. If a save fails — you're offline, your session
+expired, someone else saved first — those edits exist **only in the open tab**. The
+topbar will say so explicitly ("changes are NOT saved"), and the browser will warn you
+before closing.
+
+If you see that message, keep the tab open until it clears. Reconnecting or signing back
+in lets the save finish; closing the tab loses the work.
 
 ## Access
 
