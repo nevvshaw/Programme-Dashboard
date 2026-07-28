@@ -185,7 +185,37 @@
     .gantt .hcell.current{background:var(--navy) !important; color:#fff !important;}
     .gantt .bar{background:var(--sky) !important; color:#fff !important;}
     .gantt .cell{background:#F7F8FB !important;}
-    .kpi-card, .card, .crit-card, .action-card, .footer-strip{break-inside:avoid;}
+
+    /* ---- Page-break behaviour ----
+       An earlier version put break-inside:avoid on .card. That is wrong for the
+       big table cards: when one didn't fit in the space left on a page the whole
+       card jumped to the next, stranding half a page of white. Cards now flow and
+       break where needed; only the small, self-contained blocks are kept whole,
+       and rows are protected individually so a break never lands mid-row. */
+    @page{ margin:10mm; }
+    .card{break-inside:auto;}
+    .kpi-card, .crit-card, .action-card, .footer-strip, .gantt, .flow{break-inside:avoid;}
+    table{break-inside:auto;}
+    tr, .ref-list li, .version-item{break-inside:avoid;}
+    /* Repeat table headers on every page a table spills onto. */
+    thead{display:table-header-group;}
+    /* Never leave a section heading alone at the foot of a page. */
+    .card-head, .card-head h3, h3, h4{break-after:avoid;}
+
+    /* ---- Density ----
+       Screen spacing is generous for reading on a monitor; in print it just costs
+       pages. Tighten the gaps and padding without shrinking any text. */
+    .dash{gap:9px !important;}
+    .card{padding:11px 13px;}
+    .card-head{margin-bottom:8px;}
+    .dash-head{padding:11px 14px;}
+    .kpi-grid{gap:8px !important;}
+    .kpi-card{padding:9px;}
+    .kpi-card .sub{margin-top:3px;}
+    .two-col, .crit-grid{gap:10px !important;}
+    td{padding:5px 7px;}
+    th{padding:4px 7px;}
+    .footer-strip{padding:8px 14px;}
   }
 
   /* ---- Auth gate ----
