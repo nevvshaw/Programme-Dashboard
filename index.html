@@ -205,7 +205,17 @@
     /* ---- Density ----
        Screen spacing is generous for reading on a monitor; in print it just costs
        pages. Tighten the gaps and padding without shrinking any text. */
-    .dash{gap:9px !important;}
+    /* The single biggest source of blank space. .dash is a flex column on screen,
+       and Chrome does not fragment a flex item across a page boundary: an item
+       that doesn't fit in the room left is pushed whole to the next page, leaving
+       the rest blank. (Items taller than a full page split only because there is
+       no alternative — which is why one long table flowed but nothing else did.)
+       Block layout fragments correctly, so cards fill the space they're given.
+       The flex `gap` stops applying in block layout, hence the margin. */
+    .dash{display:block !important;}
+    .dash > * + *{margin-top:9px;}
+    /* Restore/Delete are controls, not content — they mean nothing on paper. */
+    .version-actions{display:none !important;}
     .card{padding:11px 13px;}
     .card-head{margin-bottom:8px;}
     .dash-head{padding:11px 14px;}
