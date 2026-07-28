@@ -83,13 +83,13 @@
   .dash-head h2{margin:0 0 3px; font-size:19px; color:var(--navy);}
   .dash-head p{margin:0; font-size:12px; color:var(--muted);}
   .rag-badge{display:inline-flex; align-items:center; gap:7px; padding:6px 14px; border-radius:20px; font-weight:700; font-size:12.5px;}
-  .rag-badge.g{background:var(--green-bg); color:var(--green);} .rag-badge.a{background:var(--amber-bg); color:var(--amber);} .rag-badge.r{background:var(--red-bg); color:var(--red);}
+  .rag-badge.g{background:var(--green); color:#fff;} .rag-badge.a{background:var(--amber); color:#fff;} .rag-badge.r{background:var(--red); color:#fff;}
   .rag-badge .dot{width:8px; height:8px; border-radius:50%; background:currentColor;}
 
   .kpi-grid{display:grid; grid-template-columns:repeat(6,1fr); gap:14px;}
   @media (max-width:1300px){ .kpi-grid{grid-template-columns:repeat(3,1fr);} }
   @media (max-width:640px){ .kpi-grid{grid-template-columns:repeat(2,1fr);} }
-  .kpi-card{background:var(--paper); border:1px solid var(--border); border-radius:10px; padding:16px; border-top:3px solid var(--sky);}
+  .kpi-card{background:var(--paper); border:1px solid var(--border); border-radius:10px; padding:16px; border-top:6px solid var(--sky);}
   .kpi-card .num{font-size:25px; font-weight:700; color:var(--navy); line-height:1.1;}
   .kpi-card .lbl{font-size:10.5px; text-transform:uppercase; letter-spacing:.4px; color:var(--muted); font-weight:700; margin-top:4px;}
   .kpi-card .sub{font-size:11px; color:var(--muted); margin-top:6px; line-height:1.4;}
@@ -108,8 +108,15 @@
   .empty-note{font-size:12px; color:var(--muted); font-style:italic; padding:10px 0;}
 
   .pill{display:inline-flex; align-items:center; gap:5px; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:700;}
-  .pill.g{background:var(--green-bg); color:var(--green);} .pill.a{background:var(--amber-bg); color:var(--amber);} .pill.r{background:var(--red-bg); color:var(--red);}
+  .pill.g{background:var(--green); color:#fff;} .pill.a{background:var(--amber); color:#fff;} .pill.r{background:var(--red); color:#fff;}
   .pill .dot{width:6px; height:6px; border-radius:50%; background:currentColor;}
+  /* Reference numbers (R1, I1, A1, D1) — see normaliseRefs() for how they are issued. */
+  .ref-tag{display:inline-block; font-weight:700; color:var(--sky); font-size:11px; letter-spacing:.3px;}
+  td.ref-cell{font-weight:700; color:var(--navy); white-space:nowrap; font-size:11.5px;}
+  th.ref-col{width:52px;}
+  .ref-list{list-style:none; padding-left:0; margin:0; font-size:12.5px; line-height:1.7; color:#333;}
+  .ref-list li{display:flex; gap:10px; align-items:baseline; padding:3px 0;}
+  .ref-list li .ref-tag{flex-shrink:0; min-width:30px; color:var(--navy);}
   .sev{font-weight:700; font-size:11.5px;}
   .sev.high{color:var(--red);} .sev.medium{color:var(--amber);} .sev.low{color:var(--green);}
   .sev.p1{color:var(--red);} .sev.p2{color:var(--amber);} .sev.p3{color:var(--muted);}
@@ -163,9 +170,20 @@
   .btn-mini.danger:hover{background:var(--red-bg); border-color:var(--red);}
 
   @media print{
+    /* Browsers drop background colours when printing unless told otherwise, which
+       is what made the blue week headers and the gantt bars come out blank. This
+       forces every background/colour to be honoured in print and PDF export. */
+    *{-webkit-print-color-adjust:exact !important; print-color-adjust:exact !important;}
     .topbar, .panel{display:none !important;}
     .layout{display:block; padding:0;}
     #authGate{display:none !important;}
+    /* Bars and week headers are the two that matter most — pin them explicitly so
+       they survive even if a browser ignores the rule above. */
+    .gantt .hcell{background:var(--sky-pale) !important; color:var(--navy) !important;}
+    .gantt .hcell.current{background:var(--navy) !important; color:#fff !important;}
+    .gantt .bar{background:var(--sky) !important; color:#fff !important;}
+    .gantt .cell{background:#F7F8FB !important;}
+    .kpi-card, .card, .crit-card, .action-card, .footer-strip{break-inside:avoid;}
   }
 
   /* ---- Auth gate ----
@@ -443,7 +461,45 @@ const FELBER_LOGO = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAd4AAAC1CAYAA
 const LEGACY_STORAGE_KEYS = ["golive-dashboard-state-v1", "golive-dashboard-history-v1"];
 try{ LEGACY_STORAGE_KEYS.forEach(k => localStorage.removeItem(k)); }catch(err){}
 
-function getDefaultState(){ return {
+/* ---- Reference numbers (R1, I1, A1, D1) ----
+   Risks, issues, assumptions and dependencies each carry a stable `ref` that is
+   allocated once and never reused. `refCounters` records the highest number ever
+   issued per type, so deleting R3 does not free R3 up: if R4 exists, the next
+   risk added becomes R5. That is deliberate — a recycled ref silently makes old
+   minutes, emails and audit notes point at a different item than they did. */
+const REF_TYPES = {risks:"R", issues:"I", assumptions:"A", dependencies:"D"};
+
+function normaliseRefs(st){
+  if(!st || typeof st !== "object") return st;
+  if(!st.refCounters || typeof st.refCounters !== "object") st.refCounters = {};
+  Object.keys(REF_TYPES).forEach(key=>{
+    if(!Array.isArray(st[key])) st[key] = [];
+    // Assumptions and dependencies were plain strings before refs existed; lift
+    // them to {ref, text} so every referenced type has the same shape.
+    st[key] = st[key].map(item =>
+      (typeof item === "string") ? {ref:"", text:item} : Object.assign({}, item));
+    let counter = parseInt(st.refCounters[key], 10) || 0;
+    // Honour refs that were already saved, and make sure the counter clears the
+    // highest one present — restoring an old version must not re-issue a ref.
+    st[key].forEach(item=>{
+      const n = parseInt(String(item.ref || "").replace(/^\D+/, ""), 10);
+      if(!isNaN(n) && n > counter) counter = n;
+    });
+    st[key].forEach(item=>{ if(!item.ref) item.ref = REF_TYPES[key] + (++counter); });
+    st.refCounters[key] = counter;
+  });
+  return st;
+}
+
+/* Allocate the next unused ref for a type and burn the number so it never repeats. */
+function nextRef(key){
+  if(!state.refCounters) state.refCounters = {};
+  const counter = (parseInt(state.refCounters[key], 10) || 0) + 1;
+  state.refCounters[key] = counter;
+  return REF_TYPES[key] + counter;
+}
+
+function getDefaultState(){ return normaliseRefs({
   header:{programme:"Quote Management Programme — CPQ Platform Deployment", period:"Steering Review · Week commencing 6 Jul 2026"},
   goLiveDate:"2026-08-17",
   metrics:{ uatTotal:77, uatPassed:36, uatFailed:0, defOpen:2, p1Open:1, defClosed:40, defTotal:42, cutStarted:0, cutTotal:23,
@@ -589,7 +645,7 @@ function getDefaultState(){ return {
   // an older version of the file" apart from "this browser has today's edits" —
   // see the version check in loadState() below.
   generatedAt:"2026-07-27T15:30:00Z"
-};}
+});}
 
 let state = getDefaultState();
 let saveTimer = null;
@@ -825,6 +881,10 @@ function mergeState(parsed){
       return sec;
     });
   }
+  // Backfill reference numbers. Saves made before refs existed hold assumptions
+  // and dependencies as plain strings and carry no refs at all; this lifts them
+  // to the current shape and issues numbers without disturbing any already set.
+  normaliseRefs(merged);
   return merged;
 }
 
@@ -995,10 +1055,27 @@ function describeError(err){
   return (err && err.message) ? err.message : "unknown error.";
 }
 
+/* ---- Dates ----
+   Every date on the dashboard renders as dd-mmm (optionally -yyyy) rather than a
+   numeric format. 07/08 is the 7th of August to a British reader and the 8th of
+   July to an American one; "07-Aug" is the same date to both. Locale-independent
+   by construction — it never consults the viewer's regional settings. */
+const MONTH_ABBR = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+function fmtDate(d, opts){
+  if(!(d instanceof Date) || isNaN(d.getTime())) return "—";
+  const day = String(d.getDate()).padStart(2,"0");
+  const base = day + "-" + MONTH_ABBR[d.getMonth()];
+  return (opts && opts.year === false) ? base : base + "-" + d.getFullYear();
+}
+/* Convenience for the "YYYY-MM-DD" strings held in state (date inputs, gates). */
+function fmtDateStr(s, opts){
+  if(!s) return "—";
+  return fmtDate(new Date(s + "T00:00:00"), opts);
+}
+
 function formatTimestamp(iso){
   const d = new Date(iso);
-  return d.toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"}) + " · " +
-    d.toLocaleTimeString("en-GB",{hour:"2-digit",minute:"2-digit"});
+  return fmtDate(d) + " · " + d.toLocaleTimeString("en-GB",{hour:"2-digit",minute:"2-digit"});
 }
 
 /* ---- Input panel collapse ---- */
@@ -1203,7 +1280,7 @@ function renderRiskRows(){
   document.getElementById("riskRows").innerHTML = state.risks.map((r,i)=>`
     <div class="row-card">
       <button class="remove-row" data-remove="risk" data-i="${i}">Remove</button>
-      <label>Risk</label>
+      <label>Risk <span class="ref-tag">${esc(r.ref||"")}</span></label>
       <input type="text" data-field="risk" data-type="risk" data-i="${i}" value="${esc(r.risk)}">
       <div class="row-grid">
         <div><label>Impact</label>
@@ -1227,7 +1304,7 @@ function renderIssueRows(){
         <button class="btn-mini" data-move-item-down="issue" data-i="${i}" ${i===state.issues.length-1 ? "disabled" : ""}>▼</button>
         <button class="remove-row" style="position:static;" data-remove="issue" data-i="${i}">Remove</button>
       </div>
-      <label>Issue</label>
+      <label>Issue <span class="ref-tag">${esc(it.ref||"")}</span></label>
       <input type="text" data-field="issue" data-type="issue" data-i="${i}" value="${esc(it.issue)}">
       <div class="row-grid">
         <div><label>Severity</label>
@@ -1310,8 +1387,8 @@ function renderAssumptionRows(){
   document.getElementById("assumptionRows").innerHTML = state.assumptions.map((a,i)=>`
     <div class="row-card">
       <button class="remove-row" data-remove="assumption" data-i="${i}">Remove</button>
-      <label>Assumption</label>
-      <input type="text" data-type="assumption" data-i="${i}" value="${esc(a)}">
+      <label>Assumption <span class="ref-tag">${esc(a.ref||"")}</span></label>
+      <input type="text" data-field="text" data-type="assumption" data-i="${i}" value="${esc(a.text||"")}">
     </div>`).join("") || `<p class="hint">No assumptions yet.</p>`;
 }
 
@@ -1319,8 +1396,8 @@ function renderDependencyRows(){
   document.getElementById("dependencyRows").innerHTML = state.dependencies.map((d,i)=>`
     <div class="row-card">
       <button class="remove-row" data-remove="dependency" data-i="${i}">Remove</button>
-      <label>Dependency</label>
-      <input type="text" data-type="dependency" data-i="${i}" value="${esc(d)}">
+      <label>Dependency <span class="ref-tag">${esc(d.ref||"")}</span></label>
+      <input type="text" data-field="text" data-type="dependency" data-i="${i}" value="${esc(d.text||"")}">
     </div>`).join("") || `<p class="hint">No dependencies yet.</p>`;
 }
 
@@ -1455,7 +1532,7 @@ function computeGanttWeeks(){
   const weeks = [];
   for(let w=1; w<=state.ganttWeeks; w++){
     const d = new Date(start); d.setDate(d.getDate() + (w-1)*7);
-    weeks.push({week:w, label:"W"+w, date: d.toLocaleDateString("en-GB",{day:"numeric", month:"short"}), dateObj:d});
+    weeks.push({week:w, label:"W"+w, date: fmtDate(d,{year:false}), dateObj:d});
   }
   return weeks;
 }
@@ -1686,11 +1763,11 @@ function renderDashboard(){
         </select>
       </div>
       <table>
-        <thead><tr><th>Risk</th><th>Impact</th><th>Mitigation</th></tr></thead>
+        <thead><tr><th class="ref-col">Ref</th><th>Risk</th><th>Impact</th><th>Mitigation</th></tr></thead>
         <tbody>
           ${riskFiltered.length ? riskFiltered.map(r=>`
-            <tr><td>${esc(r.risk)}</td><td><span class="sev ${r.impact.toLowerCase()}">${esc(r.impact)}</span></td><td>${esc(r.mitigation)}</td></tr>
-          `).join("") : `<tr><td colspan="3" class="empty-note">No risks match this filter.</td></tr>`}
+            <tr><td class="ref-cell">${esc(r.ref||"—")}</td><td>${esc(r.risk)}</td><td><span class="sev ${r.impact.toLowerCase()}">${esc(r.impact)}</span></td><td>${esc(r.mitigation)}</td></tr>
+          `).join("") : `<tr><td colspan="4" class="empty-note">No risks match this filter.</td></tr>`}
         </tbody>
       </table>
     </div>`,
@@ -1699,11 +1776,11 @@ function renderDashboard(){
     <div class="card">
       <div class="card-head"><h3>Issues — live now</h3></div>
       <table>
-        <thead><tr><th>Issue</th><th>Sev.</th><th>RAG Status</th><th>Status</th><th>Action &amp; owner</th><th>Comments</th></tr></thead>
+        <thead><tr><th class="ref-col">Ref</th><th>Issue</th><th>Sev.</th><th>RAG Status</th><th>Status</th><th>Action &amp; owner</th><th>Comments</th></tr></thead>
         <tbody>
           ${p.issues.length ? p.issues.map(it=>`
-            <tr><td>${esc(it.issue)}</td><td><span class="sev ${it.sev.toLowerCase()}">${esc(it.sev)}</span></td><td><span class="pill ${it.rag||'r'}"><span class="dot"></span>${RAG_LABEL[it.rag||'r']}</span></td><td><span class="status-pill ${it.progress||'notstarted'}">${PROGRESS_OPTS.find(o=>o[0]===(it.progress||'notstarted'))?.[1]}</span></td><td>${esc(it.action)}</td><td>${esc(it.comments||"")}</td></tr>
-          `).join("") : `<tr><td colspan="6" class="empty-note">No issues logged.</td></tr>`}
+            <tr><td class="ref-cell">${esc(it.ref||"—")}</td><td>${esc(it.issue)}</td><td><span class="sev ${it.sev.toLowerCase()}">${esc(it.sev)}</span></td><td><span class="pill ${it.rag||'r'}"><span class="dot"></span>${RAG_LABEL[it.rag||'r']}</span></td><td><span class="status-pill ${it.progress||'notstarted'}">${PROGRESS_OPTS.find(o=>o[0]===(it.progress||'notstarted'))?.[1]}</span></td><td>${esc(it.action)}</td><td>${esc(it.comments||"")}</td></tr>
+          `).join("") : `<tr><td colspan="7" class="empty-note">No issues logged.</td></tr>`}
         </tbody>
       </table>
     </div>`,
@@ -1723,7 +1800,7 @@ function renderDashboard(){
               <td><span class="sev ${d.severity.toLowerCase()}">${esc(d.severity)}</span></td>
               <td>${esc(d.owner)}</td>
               <td>${esc(d.comments||"")}</td>
-              <td>${rd ? esc(rd.toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"})) : "—"}</td>
+              <td>${rd ? esc(fmtDate(rd)) : "—"}</td>
             </tr>`;
           }).join("") : `<tr><td colspan="6" class="empty-note">No open defects logged.</td></tr>`}
         </tbody>
@@ -1733,13 +1810,13 @@ function renderDashboard(){
     assumptions: () => `
     <div class="card">
       <div class="card-head"><h3>Assumptions</h3></div>
-      ${p.assumptions.length ? `<ul class="bullets">${p.assumptions.map(a=>`<li>${esc(a)}</li>`).join("")}</ul>` : `<div class="empty-note">No assumptions yet.</div>`}
+      ${p.assumptions.length ? `<ul class="ref-list">${p.assumptions.map(a=>`<li><span class="ref-tag">${esc(a.ref||"—")}</span><span>${esc(a.text||"")}</span></li>`).join("")}</ul>` : `<div class="empty-note">No assumptions yet.</div>`}
     </div>`,
 
     dependencies: () => `
     <div class="card">
       <div class="card-head"><h3>Dependencies</h3></div>
-      ${p.dependencies.length ? `<ul class="bullets">${p.dependencies.map(d=>`<li>${esc(d)}</li>`).join("")}</ul>` : `<div class="empty-note">No dependencies yet.</div>`}
+      ${p.dependencies.length ? `<ul class="ref-list">${p.dependencies.map(d=>`<li><span class="ref-tag">${esc(d.ref||"—")}</span><span>${esc(d.text||"")}</span></li>`).join("")}</ul>` : `<div class="empty-note">No dependencies yet.</div>`}
     </div>`,
 
     systemsInScope: () => `
@@ -1811,7 +1888,7 @@ function renderDashboard(){
     <div class="dash-head">
       <div>
         <h2>${esc(p.header.programme)}</h2>
-        <p>${esc(p.header.period)} · Target go-live: ${goLive ? goLive.toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"}) : "—"}</p>
+        <p>${esc(p.header.period)} · Target go-live: ${goLive ? fmtDate(goLive) : "—"}</p>
       </div>
       <span class="rag-badge ${overallRag}"><span class="dot"></span>Overall readiness: ${RAG_LABEL[overallRag]}</span>
     </div>
@@ -1844,7 +1921,7 @@ function renderDashboard(){
 
     <div class="footer-strip">
       <span><img src="${FELBER_LOGO}" class="footer-logo" alt="Felber Consulting">Felber Consulting — Go-Live Readiness Dashboard</span>
-      <span>Commercial in Confidence — generated ${new Date().toLocaleDateString("en-GB",{day:"2-digit", month:"short", year:"numeric"})}</span>
+      <span>Commercial in Confidence — generated ${fmtDate(new Date())}</span>
     </div>
   `;
 
@@ -1904,13 +1981,9 @@ panel.addEventListener("input", e=>{
     if(t.dataset.key){ state.metrics[t.dataset.key] = parseInt(t.value)||0; renderDashboard(); return; }
   }
 
-  if(t.dataset.type === "assumption" || t.dataset.type === "dependency"){
-    const arr = state[ARR_MAP[t.dataset.type]];
-    const idx = parseInt(t.dataset.i);
-    if(arr && idx > -1 && idx < arr.length){ arr[idx] = t.value; renderDashboard(); }
-    return;
-  }
-
+  // Assumptions and dependencies used to be bare strings and needed a special case
+  // here. They are now {ref, text} like everything else, so the generic handler
+  // below writes them via data-field="text".
   const type = t.dataset.type, field = t.dataset.field, i = t.dataset.i;
   if(!type || !field || !ARR_MAP[type]) return;
   const arr = state[ARR_MAP[type]];
@@ -2035,16 +2108,16 @@ panel.addEventListener("click", e=>{
     const arr = state[ARR_MAP[type]];
     if(type==="readiness") arr.push({area:"New area", rag:"a", evidence:"", mustClear:"", owner:""});
     if(type==="action") arr.push({seq:arr.length+1, title:"New action", desc:"", status:"notstarted", rag:"g"});
-    if(type==="risk") arr.push({risk:"", impact:"Medium", mitigation:""});
-    if(type==="issue") arr.push({issue:"", sev:"P2", rag:"r", progress:"notstarted", action:"", comments:""});
+    if(type==="risk") arr.push({ref:nextRef("risks"), risk:"", impact:"Medium", mitigation:""});
+    if(type==="issue") arr.push({ref:nextRef("issues"), issue:"", sev:"P2", rag:"r", progress:"notstarted", action:"", comments:""});
     if(type==="defect") arr.push({defectNo:"", description:"", severity:"P2", owner:"", comments:"", resolutionDate:""});
     if(type==="decision") arr.push({title:"", detail:"", status:"Pending"});
     if(type==="ganttTrack") arr.push({name:"New track", start:1, end:1});
     if(type==="ganttGate") arr.push({label:"New gate", date: state.ganttStartDate});
     if(type==="customMetric") arr.push({label:"New metric", value:0});
     if(type==="criticalPath") arr.push({title:"New critical path item", points:["First point"], clear:""});
-    if(type==="assumption") arr.push("New assumption");
-    if(type==="dependency") arr.push("New dependency");
+    if(type==="assumption") arr.push({ref:nextRef("assumptions"), text:"New assumption"});
+    if(type==="dependency") arr.push({ref:nextRef("dependencies"), text:"New dependency"});
     if(type==="system") arr.push({name:"New system", status:"notstarted"});
     renderForm(); renderDashboard();
     return;
@@ -2271,7 +2344,7 @@ document.getElementById("btnReset").addEventListener("click", async ()=>{
   await saveState();
 });
 document.getElementById("btnSaveVersion").addEventListener("click", async (e)=>{
-  const defaultLabel = "Week of " + new Date().toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"});
+  const defaultLabel = "Week of " + fmtDate(new Date());
   const label = prompt("Label this week's snapshot:", defaultLabel);
   if(!label) return;
   e.target.disabled = true;
