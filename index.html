@@ -59,6 +59,8 @@
   textarea{resize:vertical; min-height:56px; line-height:1.4;}
   .row-card{border:1px solid var(--border); border-radius:8px; padding:10px; margin-bottom:8px; background:#FCFCFE; position:relative;}
   .row-grid{display:grid; grid-template-columns:1fr 1fr; gap:8px;}
+  /* Ref number is editable but deliberately narrow — it holds "R12", not prose. */
+  input.ref-input{max-width:96px; font-weight:700; color:var(--navy);}
   .remove-row{position:absolute; top:7px; right:7px; background:none; border:none; color:#B2364A; font-size:10.5px; font-weight:700; cursor:pointer;}
   .remove-row:hover{text-decoration:underline;}
   .add-row{width:100%; padding:8px; border:1px dashed #A8B0C4; border-radius:6px; background:transparent; color:var(--navy); font-weight:700; font-size:12px; cursor:pointer; font-family:inherit;}
@@ -491,12 +493,20 @@ function normaliseRefs(st){
   return st;
 }
 
-/* Allocate the next unused ref for a type and burn the number so it never repeats. */
+/* Allocate the next unused ref for a type and burn the number so it never repeats.
+   Refs are hand-editable, so the counter alone is not enough: someone may have
+   typed "R7" into a row while the counter still reads 4. Skip anything already in
+   use so an auto-allocated ref can never collide with a manually entered one. */
 function nextRef(key){
   if(!state.refCounters) state.refCounters = {};
-  const counter = (parseInt(state.refCounters[key], 10) || 0) + 1;
+  const inUse = new Set((Array.isArray(state[key]) ? state[key] : [])
+    .map(item => String((item && item.ref) || "").trim().toUpperCase())
+    .filter(Boolean));
+  let counter = parseInt(state.refCounters[key], 10) || 0;
+  let ref;
+  do{ ref = REF_TYPES[key] + (++counter); } while(inUse.has(ref.toUpperCase()));
   state.refCounters[key] = counter;
-  return REF_TYPES[key] + counter;
+  return ref;
 }
 
 function getDefaultState(){ return normaliseRefs({
@@ -1289,7 +1299,9 @@ function renderRiskRows(){
   document.getElementById("riskRows").innerHTML = state.risks.map((r,i)=>`
     <div class="row-card">
       <button class="remove-row" data-remove="risk" data-i="${i}">Remove</button>
-      <label>Risk <span class="ref-tag">${esc(r.ref||"")}</span></label>
+      <label>Ref</label>
+      <input type="text" class="ref-input" data-field="ref" data-type="risk" data-i="${i}" value="${esc(r.ref||"")}">
+      <label>Risk</label>
       <input type="text" data-field="risk" data-type="risk" data-i="${i}" value="${esc(r.risk)}">
       <div class="row-grid">
         <div><label>Impact</label>
@@ -1313,7 +1325,9 @@ function renderIssueRows(){
         <button class="btn-mini" data-move-item-down="issue" data-i="${i}" ${i===state.issues.length-1 ? "disabled" : ""}>▼</button>
         <button class="remove-row" style="position:static;" data-remove="issue" data-i="${i}">Remove</button>
       </div>
-      <label>Issue <span class="ref-tag">${esc(it.ref||"")}</span></label>
+      <label>Ref</label>
+      <input type="text" class="ref-input" data-field="ref" data-type="issue" data-i="${i}" value="${esc(it.ref||"")}">
+      <label>Issue</label>
       <input type="text" data-field="issue" data-type="issue" data-i="${i}" value="${esc(it.issue)}">
       <div class="row-grid">
         <div><label>Severity</label>
@@ -1396,7 +1410,9 @@ function renderAssumptionRows(){
   document.getElementById("assumptionRows").innerHTML = state.assumptions.map((a,i)=>`
     <div class="row-card">
       <button class="remove-row" data-remove="assumption" data-i="${i}">Remove</button>
-      <label>Assumption <span class="ref-tag">${esc(a.ref||"")}</span></label>
+      <label>Ref</label>
+      <input type="text" class="ref-input" data-field="ref" data-type="assumption" data-i="${i}" value="${esc(a.ref||"")}">
+      <label>Assumption</label>
       <input type="text" data-field="text" data-type="assumption" data-i="${i}" value="${esc(a.text||"")}">
     </div>`).join("") || `<p class="hint">No assumptions yet.</p>`;
 }
@@ -1405,7 +1421,9 @@ function renderDependencyRows(){
   document.getElementById("dependencyRows").innerHTML = state.dependencies.map((d,i)=>`
     <div class="row-card">
       <button class="remove-row" data-remove="dependency" data-i="${i}">Remove</button>
-      <label>Dependency <span class="ref-tag">${esc(d.ref||"")}</span></label>
+      <label>Ref</label>
+      <input type="text" class="ref-input" data-field="ref" data-type="dependency" data-i="${i}" value="${esc(d.ref||"")}">
+      <label>Dependency</label>
       <input type="text" data-field="text" data-type="dependency" data-i="${i}" value="${esc(d.text||"")}">
     </div>`).join("") || `<p class="hint">No dependencies yet.</p>`;
 }
