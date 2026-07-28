@@ -29,7 +29,7 @@
   .topbar-controls{display:flex; align-items:center; gap:10px; flex-wrap:wrap;}
   .tb-field{display:flex; flex-direction:column; gap:2px;}
   .tb-field label{font-size:10px; text-transform:uppercase; letter-spacing:.5px; color:#BFD4F0; font-weight:700;}
-  select, input[type="text"], input[type="date"], input[type="number"], textarea{
+  select, input[type="text"], input[type="date"], input[type="number"], input[type="email"], input[type="password"], textarea{
     font-family:inherit; font-size:13px; padding:7px 9px; border-radius:6px; border:1px solid var(--border); background:#FAFBFD; color:var(--ink);
   }
   .topbar select, .topbar input[type="date"]{background:rgba(255,255,255,.95); border:1px solid rgba(255,255,255,.4); min-width:150px;}
@@ -55,7 +55,7 @@
   .field-group > h2{font-size:11.5px; text-transform:uppercase; letter-spacing:.7px; color:var(--sky); font-weight:700; margin:0 0 10px; padding-bottom:6px; border-bottom:1px solid var(--border);}
   label{display:block; font-size:11.5px; font-weight:600; color:var(--muted); margin:8px 0 3px;}
   label:first-child{margin-top:0;}
-  select, input[type="text"], input[type="number"], textarea{width:100%;}
+  select, input[type="text"], input[type="number"], input[type="email"], input[type="password"], textarea{width:100%;}
   textarea{resize:vertical; min-height:56px; line-height:1.4;}
   .row-card{border:1px solid var(--border); border-radius:8px; padding:10px; margin-bottom:8px; background:#FCFCFE; position:relative;}
   .row-grid{display:grid; grid-template-columns:1fr 1fr; gap:8px;}
@@ -178,20 +178,22 @@
 
   #authGate{
     position:fixed; inset:0; z-index:100; display:flex; align-items:center; justify-content:center;
-    padding:24px; background:#000;
+    padding:24px; background:var(--navy);
+    background-image:linear-gradient(140deg, var(--navy-deep) 0%, var(--navy) 55%, #2F4E8A 100%);
   }
   body.app-ready #authGate{display:none;}
   .auth-card{
-    width:100%; max-width:380px; background:var(--paper); border-radius:12px; padding:28px;
+    width:100%; max-width:480px; background:var(--paper); border-radius:14px; padding:40px;
     box-shadow:0 12px 40px rgba(0,0,0,.3);
   }
-  .auth-card .brand-mark{height:38px; margin-bottom:18px; display:inline-flex;}
-  .auth-card h2{margin:0 0 4px; font-size:17px; color:var(--navy);}
-  .auth-card p.auth-sub{margin:0 0 18px; font-size:12px; color:var(--muted); line-height:1.45;}
-  .auth-card label{margin-top:12px;}
+  .auth-card .brand-mark{height:48px; margin-bottom:22px; display:inline-flex;}
+  .auth-card h2{margin:0 0 6px; font-size:22px; color:var(--navy);}
+  .auth-card p.auth-sub{margin:0 0 24px; font-size:13.5px; color:var(--muted); line-height:1.5;}
+  .auth-card label{margin-top:16px; font-size:13px;}
+  .auth-card input{padding:11px 12px; font-size:14.5px;}
   .auth-card button[type="submit"]{
-    width:100%; margin-top:18px; padding:10px; border:none; border-radius:6px;
-    background:var(--sky); color:#0B2436; font-size:13.5px; font-weight:700; cursor:pointer; font-family:inherit;
+    width:100%; margin-top:24px; padding:14px; border:none; border-radius:8px;
+    background:var(--sky); color:#0B2436; font-size:15.5px; font-weight:700; cursor:pointer; font-family:inherit;
   }
   .auth-card button[type="submit"]:hover{background:#4FB6E8;}
   .auth-card button[type="submit"]:disabled{opacity:.6; cursor:default;}
@@ -237,8 +239,8 @@
   <div class="auth-checking">Checking sign-in…</div>
   <form class="auth-card" id="authForm" autocomplete="on">
     <div class="brand-mark"><img id="authLogo" alt="Felber Consulting"></div>
-    <h2>Go-Live Readiness Dashboard</h2>
-    <p class="auth-sub">Quote Management Programme. Sign in with your administrator account to view or edit the dashboard.</p>
+    <h2>Programme Dashboard</h2>
+    <p class="auth-sub">Sign in with your administrator account to view or edit the dashboard.</p>
     <label for="authEmail">Email</label>
     <input type="email" id="authEmail" name="email" autocomplete="username" required>
     <label for="authPassword">Password</label>
