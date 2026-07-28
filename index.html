@@ -881,6 +881,15 @@ function mergeState(parsed){
       return sec;
     });
   }
+  // Reference counters must come from the *saved* data, never from the defaults.
+  // Object.assign above leaves defaults.refCounters in place when a save predates
+  // refs, and those counters are already set to the size of the built-in deck data
+  // (4 risks, 2 issues, ...). Inheriting them made a first migration number real
+  // items from R5/I3/A6/D5 instead of 1. Starting empty lets normaliseRefs derive
+  // the counters from the refs actually present, which is 0 for un-migrated data.
+  merged.refCounters = (parsed && parsed.refCounters && typeof parsed.refCounters === "object")
+    ? Object.assign({}, parsed.refCounters)
+    : {};
   // Backfill reference numbers. Saves made before refs existed hold assumptions
   // and dependencies as plain strings and carry no refs at all; this lifts them
   // to the current shape and issues numbers without disturbing any already set.
