@@ -1540,8 +1540,6 @@ function renderDashboard(){
   const psOppPct = m.psOppTotal>0 ? (m.psOppPassed/m.psOppTotal)*100 : 0;
   const goLive = state.goLiveDate ? new Date(state.goLiveDate+"T00:00:00") : null;
   const daysToGoLive = goLive ? daysBetween(today, goLive) : null;
-  const decisionsApproved = p.decisions.filter(d=>d.status==="Approved").length;
-  const decisionsTotal = p.decisions.length;
 
   const overallRag = overallRagFromReadiness();
 
@@ -1597,11 +1595,6 @@ function renderDashboard(){
         <div class="num">${daysToGoLive!==null ? daysToGoLive : "—"}</div>
         <div class="lbl">Days to go-live</div>
         <div class="sub">Behind two hard gates</div>
-      </div>
-      <div class="kpi-card ${decisionsTotal>0 && decisionsApproved===decisionsTotal?'good':'warn'}">
-        <div class="num">${decisionsApproved}/${decisionsTotal}</div>
-        <div class="lbl">Decisions approved</div>
-        <div class="sub">Unlocks the recovery plan</div>
       </div>
       ${p.customMetrics.map(cm=>`
       <div class="kpi-card">
