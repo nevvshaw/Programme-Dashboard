@@ -23,9 +23,9 @@
   .brand{display:flex; align-items:center; gap:12px;}
   .brand-mark{height:34px; padding:6px 10px; border-radius:8px; background:#fff; display:flex; align-items:center; justify-content:center; flex-shrink:0; box-shadow:0 1px 3px rgba(0,0,0,.15);}
   .brand-mark img{height:100%; width:auto; display:block;}
-  /* Felber sits at the far right of the topbar, opposite the Cyderes mark. */
-  .brand-mark-end{margin-left:auto; flex-shrink:0;}
-  @media (max-width:1000px){ .brand-mark-end{margin-left:0;} }
+  /* Client and delivery-partner marks, shown only on the printed/PDF export —
+     hidden on screen, where the topbar already carries the Felber logo. */
+  .print-logos{display:none;}
   .footer-logo{height:16px; width:auto; vertical-align:middle; margin-right:6px;}
   .brand-text h1{margin:0; font-size:16px; font-weight:700;}
   .brand-text p{margin:1px 0 0; font-size:11.5px; color:#C7D3EE;}
@@ -179,6 +179,20 @@
        is what made the blue week headers and the gantt bars come out blank. This
        forces every background/colour to be honoured in print and PDF export. */
     *{-webkit-print-color-adjust:exact !important; print-color-adjust:exact !important;}
+    /* ...but not the page background. body is grey (--bg) for on-screen contrast
+       against the white cards; honouring it in print floods every page edge-to-edge
+       with grey, and any empty space after the last card reads as a large grey
+       block. Cards carry their own white background and border, so they still read
+       correctly against white. */
+    html, body{background:#fff !important;}
+    .layout, .dash{background:transparent !important;}
+    /* Both marks on the export only: Cyderes (client) left, Felber (delivery)
+       right, level with each other at the head of the first page. */
+    .print-logos{
+      display:flex !important; justify-content:space-between; align-items:center;
+      margin-bottom:10px; break-inside:avoid; break-after:avoid;
+    }
+    .print-logos img{height:34px; width:auto; display:block;}
     .topbar, .panel{display:none !important;}
     .layout{display:block; padding:0;}
     #authGate{display:none !important;}
@@ -317,7 +331,7 @@
 
 <div class="topbar">
   <div class="brand">
-    <div class="brand-mark"><img id="cyderesLogo" alt="Cyderes"></div>
+    <div class="brand-mark"><img id="brandLogo" alt="Felber Consulting"></div>
     <div class="brand-text">
       <h1>Go-Live Readiness Dashboard</h1>
       <p>Felber Consulting · Quote Management Programme — NUE CPQ Platform Deployment</p>
@@ -341,8 +355,6 @@
     <button class="btn primary" id="btnPrint">Print / Save PDF</button>
     <button class="btn" id="btnSignOut">Sign out</button>
   </div>
-  <!-- Delivery partner's mark sits opposite the client's, at the far right. -->
-  <div class="brand-mark brand-mark-end"><img id="brandLogo" alt="Felber Consulting"></div>
 </div>
 
 <div class="layout" id="layoutRoot">
@@ -1966,6 +1978,10 @@ function renderDashboard(){
 
   const dash = document.getElementById("dash");
   dash.innerHTML = `
+    <div class="print-logos">
+      <img src="${CYDERES_LOGO}" alt="Cyderes">
+      <img src="${FELBER_LOGO}" alt="Felber Consulting">
+    </div>
     <div class="dash-head">
       <div>
         <h2>${esc(p.header.programme)}</h2>
@@ -2359,8 +2375,6 @@ document.getElementById("btnSignOut").addEventListener("click", async ()=>{
 /* ==================== Init ==================== */
 (async function init(){
   document.getElementById("brandLogo").src = FELBER_LOGO;
-  const cyderesLogo = document.getElementById("cyderesLogo");
-  if(cyderesLogo) cyderesLogo.src = CYDERES_LOGO;
   const authLogo = document.getElementById("authLogo");
   if(authLogo) authLogo.src = FELBER_LOGO;
 
