@@ -339,6 +339,11 @@
   </div>
   <div class="topbar-controls">
     <div class="tb-field">
+      <label for="dashboardSelect">Customer</label>
+      <select id="dashboardSelect"></select>
+    </div>
+    <button class="btn" id="btnNewDashboard" title="Create a separate dashboard for another customer — your current one is untouched">+ New customer</button>
+    <div class="tb-field">
       <label for="goLiveDate">Target go-live</label>
       <input type="date" id="goLiveDate">
     </div>
@@ -497,7 +502,31 @@ const SUPABASE_URL = "https://fzmqaivxgkqvpudzuuej.supabase.co";
    this key reads and writes nothing. Do not add anon-facing policies without revisiting
    that assumption. */
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ6bXFhaXZ4Z2txdnB1ZHp1dWVqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUxNTYwODgsImV4cCI6MjEwMDczMjA4OH0.IdYJnzmGFcy2TQ_BcHdur_9n7Ip7XTTR7hunF-n1JBY";
-const DASHBOARD_SLUG = "golive-readiness";
+/* ---- Which dashboard is this? ----
+   One row per customer in `dashboards`, keyed by a unique slug. The slug comes from
+   ?d=<slug> so every customer has its own shareable URL and its own version history.
+   No parameter means the original Cyderes dashboard, so every link and bookmark that
+   existed before multi-customer support keeps working untouched. */
+const DEFAULT_DASHBOARD_SLUG = "golive-readiness";
+function readSlugFromUrl(){
+  try{
+    const raw = new URLSearchParams(location.search).get("d");
+    if(!raw) return DEFAULT_DASHBOARD_SLUG;
+    const clean = slugify(raw);
+    return clean || DEFAULT_DASHBOARD_SLUG;
+  }catch(err){ return DEFAULT_DASHBOARD_SLUG; }
+}
+/* Customer name -> URL-safe slug. Also used when creating a dashboard, so the same
+   name always maps to the same slug and a duplicate is caught by the unique index. */
+function slugify(s){
+  return String(s || "")
+    .toLowerCase()
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")   // strip accents
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 60);
+}
+const DASHBOARD_SLUG = readSlugFromUrl();
 
 /* A "Share as HTML" export carries a frozen snapshot and no credentials — it must render
    read-only without ever contacting Supabase, so a recipient can open it straight from
@@ -996,6 +1025,15 @@ async function loadState(){
     return "loaded";
   }
 
+  // Only the original dashboard auto-seeds. For any other slug a missing row means a
+  // mistyped or stale ?d= link, and silently creating a blank dashboard there would
+  // litter the picker with junk that nobody can delete from the UI.
+  if(DASHBOARD_SLUG !== DEFAULT_DASHBOARD_SLUG){
+    const err = new Error('No dashboard exists at "?d=' + DASHBOARD_SLUG + '". Check the link, or pick a customer from the dashboard menu.');
+    err.missingDashboard = true;
+    throw err;
+  }
+
   // No row yet — seed one. upsert rather than insert so two admins opening the dashboard
   // for the first time at the same moment can't collide on the unique slug.
   const seed = mergeState(getDefaultState());
@@ -1004,6 +1042,7 @@ async function loadState(){
     .upsert(
       {
         slug: DASHBOARD_SLUG,
+        name: "Cyderes — NUE CPQ",
         data: seed,
         generated_at: seed.generatedAt || null,
         updated_by: currentUser ? currentUser.id : null
@@ -1019,6 +1058,97 @@ async function loadState(){
   revision = inserted.revision;
   state = mergeState(inserted.data);
   return "seeded";
+}
+
+/* ---- Multiple customers ----
+   Every customer is its own row in `dashboards` with its own slug, data document,
+   revision counter and version history. Creating one never touches another: the
+   only shared thing is the admin allowlist, so whoever can edit one can edit all. */
+let dashboardList = [];
+
+async function fetchDashboardList(){
+  if(STANDALONE || !sb) return [];
+  const { data, error } = await sb
+    .from("dashboards")
+    .select("id, slug, name")
+    .order("name", { ascending: true });
+  if(error){ console.error("Could not list dashboards:", error); return dashboardList; }
+  dashboardList = data || [];
+  renderDashboardPicker();
+  return dashboardList;
+}
+
+function dashboardDisplayName(d){
+  if(!d) return "Untitled";
+  return d.name || d.slug;
+}
+
+function renderDashboardPicker(){
+  const sel = document.getElementById("dashboardSelect");
+  if(!sel) return;
+  const current = DASHBOARD_SLUG;
+  const known = dashboardList.some(d => d.slug === current);
+  sel.innerHTML = dashboardList.map(d =>
+      `<option value="${esc(d.slug)}" ${d.slug===current?"selected":""}>${esc(dashboardDisplayName(d))}</option>`
+    ).join("")
+    // A slug that isn't in the list yet (first load after creation) still needs to
+    // show as the selected option, otherwise the picker silently reads as another
+    // customer while you are looking at this one.
+    + (known ? "" : `<option value="${esc(current)}" selected>${esc(current)}</option>`);
+}
+
+/* Switch by navigating rather than swapping state in place: a full load re-runs the
+   auth check, resets the revision lock and clears any pending save, which is far
+   safer than trying to unpick one customer's in-flight edits from another's. */
+function openDashboard(slug){
+  if(!slug || slug === DASHBOARD_SLUG) return;
+  if(hasUnsavedWork() && !confirm("You have unsaved changes. Switch customer anyway?")) {
+    renderDashboardPicker();   // put the dropdown back to where it was
+    return;
+  }
+  const url = new URL(location.href);
+  if(slug === DEFAULT_DASHBOARD_SLUG) url.searchParams.delete("d");
+  else url.searchParams.set("d", slug);
+  location.href = url.toString();
+}
+
+async function createDashboard(){
+  const name = (prompt("Customer or programme name for the new dashboard:") || "").trim();
+  if(!name) return;
+  const slug = slugify(name);
+  if(!slug){ alert("That name has no letters or numbers in it — try something like \"Acme Corp\"."); return; }
+
+  const clash = dashboardList.find(d => d.slug === slug);
+  if(clash){
+    if(confirm(`"${dashboardDisplayName(clash)}" already uses that name. Open it instead?`)) openDashboard(slug);
+    return;
+  }
+  if(!confirm(`Create a new dashboard for "${name}"?\n\nIt starts from the standard template — the current customer's data is not copied and is not affected.`)) return;
+
+  // Start from the template, not from whatever is on screen, so nothing belonging to
+  // the current customer leaks into the new one. Version history starts empty.
+  const seed = mergeState(getDefaultState());
+  seed.header = Object.assign({}, seed.header, {programme: name});
+
+  const { error } = await sb.from("dashboards").insert({
+    slug: slug,
+    name: name,
+    data: seed,
+    generated_at: seed.generatedAt || null,
+    updated_by: currentUser ? currentUser.id : null
+  });
+
+  if(error){
+    // 23505 is the unique-slug violation: someone created the same customer between
+    // the check above and this insert.
+    if(error.code === "23505"){
+      if(confirm("Someone just created that dashboard. Open it?")) openDashboard(slug);
+      return;
+    }
+    alert("Could not create the dashboard — " + describeError(error));
+    return;
+  }
+  openDashboard(slug);
 }
 
 /* ---- Version history (weekly snapshots) ----
@@ -2313,6 +2443,7 @@ async function startSession(session){
   revealApp();
 
   await fetchHistory();
+  await fetchDashboardList();
   withoutSave(renderDashboard);
 }
 
@@ -2364,6 +2495,9 @@ document.getElementById("authForm").addEventListener("submit", async (e)=>{
     btn.disabled = false;
   }
 });
+
+document.getElementById("dashboardSelect").addEventListener("change", e=>{ openDashboard(e.target.value); });
+document.getElementById("btnNewDashboard").addEventListener("click", ()=>{ createDashboard(); });
 
 document.getElementById("btnSignOut").addEventListener("click", async ()=>{
   if(hasUnsavedWork()){
