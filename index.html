@@ -367,6 +367,20 @@
   <div class="panel">
     <div class="panel-inner" id="formPanel">
 
+      <!-- Owner-only. Hidden entirely for anyone who is not an owner; the policies
+           enforce the same rule server-side, so hiding it is convenience, not security. -->
+      <div class="field-group" id="accessGroup" style="display:none;">
+        <h2>Who can see this customer</h2>
+        <p class="hint" style="margin-bottom:10px;">Owners see every customer. Everyone listed below sees only this one. An entry here grants access — it does not create a sign-in, which is done in Supabase.</p>
+        <div id="accessRows"></div>
+        <label for="accessEmail" style="margin-top:12px;">Grant access to</label>
+        <div style="display:flex; gap:6px; align-items:center;">
+          <input type="email" id="accessEmail" placeholder="name@company.com" autocomplete="off">
+          <button class="btn-mini" id="btnGrantAccess" style="flex-shrink:0;">Add</button>
+        </div>
+        <p class="hint" id="accessMsg" style="margin-top:8px; min-height:1em;"></p>
+      </div>
+
       <div class="field-group">
         <h2>Section order</h2>
         <p class="hint" style="margin-bottom:10px;">Use the arrows to move a section up or down. The dashboard below updates and saves in the order you choose.</p>
@@ -1126,6 +1140,8 @@ async function refreshOwnerFlag(){
   }
   const btn = document.getElementById("btnNewDashboard");
   if(btn) btn.style.display = isOwner ? "" : "none";
+  const grp = document.getElementById("accessGroup");
+  if(grp) grp.style.display = isOwner ? "" : "none";
   return isOwner;
 }
 
@@ -1211,6 +1227,82 @@ async function createDashboard(){
     return;
   }
   openDashboard(slug);
+}
+
+/* ---- Access panel (owners only) ----
+   Shows who can reach the dashboard currently open: owners, who reach every customer
+   and are listed for context only, and per-customer grants, which are editable here.
+   Promotion to owner is deliberately not possible from the app — that stays a console
+   action so a hijacked session cannot widen its own reach. */
+let accessOwners = [];
+let accessGrants = [];
+
+function setAccessMessage(text, isError){
+  const el = document.getElementById("accessMsg");
+  if(!el) return;
+  el.textContent = text || "";
+  el.style.color = isError ? "var(--red)" : "var(--muted)";
+}
+
+async function fetchAccess(){
+  if(STANDALONE || !sb || !isOwner || !dashboardId) return;
+  const [owners, grants] = await Promise.all([
+    sb.from("dashboard_admins").select("email").eq("is_owner", true).order("email"),
+    sb.from("dashboard_access").select("email, note").eq("dashboard_id", dashboardId).order("email")
+  ]);
+  if(owners.error) console.error("Could not read owners:", owners.error);
+  if(grants.error) console.error("Could not read grants:", grants.error);
+  accessOwners = (owners.data || []).map(r => r.email);
+  accessGrants = grants.data || [];
+  renderAccessRows();
+}
+
+function renderAccessRows(){
+  const box = document.getElementById("accessRows");
+  if(!box) return;
+  const ownerRows = accessOwners.map(e => `
+    <div class="version-item" style="padding:7px 10px;">
+      <div class="meta"><span class="v-label">${esc(e)}</span><span class="v-date">Owner — sees every customer</span></div>
+    </div>`).join("");
+  const grantRows = accessGrants.map(g => `
+    <div class="version-item" style="padding:7px 10px;">
+      <div class="meta"><span class="v-label">${esc(g.email)}</span><span class="v-date">This customer only</span></div>
+      <div class="version-actions"><button class="btn-mini danger" data-revoke="${esc(g.email)}">Remove</button></div>
+    </div>`).join("");
+  box.innerHTML = ownerRows + grantRows ||
+    `<p class="hint">Nobody has access to this dashboard yet.</p>`;
+}
+
+async function grantAccess(){
+  const input = document.getElementById("accessEmail");
+  const email = (input.value || "").trim().toLowerCase();
+  if(!email) return;
+  if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)){ setAccessMessage("That doesn't look like an email address.", true); return; }
+  if(accessOwners.some(e => e.toLowerCase() === email)){
+    setAccessMessage("That person is an owner — they already see every customer.", false);
+    return;
+  }
+  if(accessGrants.some(g => g.email.toLowerCase() === email)){
+    setAccessMessage("They already have access to this customer.", false);
+    return;
+  }
+  setAccessMessage("Adding…", false);
+  const { error } = await sb.from("dashboard_access").insert({
+    dashboard_id: dashboardId, email: email, note: "Added from the dashboard"
+  });
+  if(error){ setAccessMessage("Could not add — " + describeError(error), true); return; }
+  input.value = "";
+  await fetchAccess();
+  setAccessMessage(email + " can now see this customer. They still need a Supabase sign-in to use it.", false);
+}
+
+async function revokeAccess(email){
+  if(!confirm(`Remove ${email}'s access to this customer?\n\nThey keep their sign-in and any access granted to other customers.`)) return;
+  const { error } = await sb.from("dashboard_access")
+    .delete().eq("dashboard_id", dashboardId).eq("email", email);
+  if(error){ setAccessMessage("Could not remove — " + describeError(error), true); return; }
+  await fetchAccess();
+  setAccessMessage(email + " no longer has access to this customer.", false);
 }
 
 /* ---- Version history (weekly snapshots) ----
@@ -2507,6 +2599,7 @@ async function startSession(session){
   await fetchHistory();
   await refreshOwnerFlag();
   await fetchDashboardList();
+  await fetchAccess();
   withoutSave(renderDashboard);
 }
 
@@ -2561,6 +2654,16 @@ document.getElementById("authForm").addEventListener("submit", async (e)=>{
 
 document.getElementById("dashboardSelect").addEventListener("change", e=>{ openDashboard(e.target.value); });
 document.getElementById("btnNewDashboard").addEventListener("click", ()=>{ createDashboard(); });
+document.getElementById("btnGrantAccess").addEventListener("click", ()=>{ grantAccess(); });
+document.getElementById("accessEmail").addEventListener("keydown", e=>{
+  // Enter in the email box should add, not submit anything else on the page.
+  if(e.key === "Enter"){ e.preventDefault(); grantAccess(); }
+});
+// Revoke buttons are re-rendered on every refresh, so delegate rather than rebind.
+document.getElementById("accessRows").addEventListener("click", e=>{
+  const btn = e.target.closest("[data-revoke]");
+  if(btn) revokeAccess(btn.dataset.revoke);
+});
 
 document.getElementById("btnSignOut").addEventListener("click", async ()=>{
   if(hasUnsavedWork()){
