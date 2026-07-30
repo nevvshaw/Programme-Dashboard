@@ -780,6 +780,11 @@ function getBlankState(programmeName){
   // Counters start from zero so the first risk added is R1.
   s.refCounters = {};
 
+  // Genuinely blank: every section is switched off, so the new dashboard opens empty
+  // rather than as thirteen "nothing yet" cards. The owner switches on the sections
+  // that matter for this customer in the Section order panel.
+  s.hiddenSections = s.sectionOrder.slice();
+
   Object.keys(s.metrics || {}).forEach(k=>{ s.metrics[k] = 0; });
 
   // Timeline starts from the Monday of the current week rather than the Cyderes dates.
@@ -1009,6 +1014,11 @@ function mergeState(parsed){
   const savedOrder = Array.isArray(parsed && parsed.sectionOrder) ? parsed.sectionOrder.filter(id => defaultSectionOrder.includes(id)) : [];
   const missingIds = defaultSectionOrder.filter(id => !savedOrder.includes(id));
   merged.sectionOrder = savedOrder.concat(missingIds);
+  // Keep only hidden ids that still exist. A section added to the app after this save
+  // is not in the list, so it defaults to visible rather than vanishing unexplained.
+  merged.hiddenSections = Array.isArray(parsed && parsed.hiddenSections)
+    ? parsed.hiddenSections.filter(id => defaultSectionOrder.includes(id))
+    : [];
   // Migrate gates saved under the old {label, week} shape (before gates were
   // pinned to real dates) into {label, date}, using this file's own start date
   // to work out which calendar date that week number pointed to.
@@ -1503,10 +1513,30 @@ const SECTION_LABELS = {
   customSections:"Custom sections"
 };
 
+/* Which sections this customer actually shows. Stored as a list of hidden ids rather
+   than visible ones, so a dashboard saved before this existed — and any section added
+   to the app later — is visible by default rather than silently disappearing. */
+function hiddenSections(){
+  if(!Array.isArray(state.hiddenSections)) state.hiddenSections = [];
+  return state.hiddenSections;
+}
+function isSectionVisible(id){ return !hiddenSections().includes(id); }
+function setSectionVisible(id, visible){
+  const hidden = hiddenSections();
+  const at = hidden.indexOf(id);
+  if(visible && at > -1) hidden.splice(at, 1);
+  else if(!visible && at === -1) hidden.push(id);
+  renderForm();
+  renderDashboard();
+}
+
 function renderSectionOrderRows(){
   document.getElementById("sectionOrderRows").innerHTML = state.sectionOrder.map((id,i)=>`
-    <div class="row-card" style="display:flex; align-items:center; justify-content:space-between; gap:8px; padding:8px 10px;">
-      <span style="font-weight:700; font-size:12px; color:var(--navy);">${esc(SECTION_LABELS[id] || id)}</span>
+    <div class="row-card" style="display:flex; align-items:center; justify-content:space-between; gap:8px; padding:8px 10px; ${isSectionVisible(id) ? "" : "opacity:.55;"}">
+      <label style="display:flex; align-items:center; gap:7px; margin:0; font-weight:700; font-size:12px; color:var(--navy); text-transform:none; letter-spacing:0; cursor:pointer;">
+        <input type="checkbox" data-section-visible="${esc(id)}" ${isSectionVisible(id) ? "checked" : ""} style="width:auto; margin:0;">
+        ${esc(SECTION_LABELS[id] || id)}
+      </label>
       <div style="display:flex; gap:6px; flex-shrink:0;">
         <button class="btn-mini" data-move-up="${i}" ${i===0 ? "disabled" : ""}>▲</button>
         <button class="btn-mini" data-move-down="${i}" ${i===state.sectionOrder.length-1 ? "disabled" : ""}>▼</button>
@@ -2256,7 +2286,7 @@ function renderDashboard(){
   };
 
   const orderedSections = state.sectionOrder
-    .filter(id => sectionHTML[id])
+    .filter(id => sectionHTML[id] && isSectionVisible(id))
     .map(id => sectionHTML[id]())
     .join("");
 
@@ -2306,8 +2336,12 @@ function renderDashboard(){
     </div>
   `;
 
-  document.getElementById("filterReadiness").addEventListener("change", e=>{ state.filters.readiness = e.target.value; renderDashboard(); });
-  document.getElementById("filterRisk").addEventListener("change", e=>{ state.filters.risk = e.target.value; renderDashboard(); });
+  // These live inside the readiness and risks cards, so they are absent whenever those
+  // sections are switched off for this customer. Bind only if they rendered.
+  const filterReadiness = document.getElementById("filterReadiness");
+  if(filterReadiness) filterReadiness.addEventListener("change", e=>{ state.filters.readiness = e.target.value; renderDashboard(); });
+  const filterRisk = document.getElementById("filterRisk");
+  if(filterRisk) filterRisk.addEventListener("change", e=>{ state.filters.risk = e.target.value; renderDashboard(); });
   // Version ids are Supabase uuids, not the Date.now() numbers they used to be —
   // Number("a3f2-…") is NaN, which would make every Restore/Delete silently do nothing.
   dash.querySelectorAll("[data-restore-version]").forEach(btn=>{
@@ -2340,6 +2374,13 @@ const ARR_MAP = {readiness:"readiness", action:"recoveryActions", risk:"risks", 
 
 panel.addEventListener("input", e=>{
   const t = e.target;
+
+  // Section show/hide checkbox — handled before the generic field writers, which
+  // expect a value rather than a checked state.
+  if(t.dataset.sectionVisible !== undefined){
+    setSectionVisible(t.dataset.sectionVisible, t.checked);
+    return;
+  }
 
   if(t.dataset.sec !== undefined){
     const sec = state.customSections[parseInt(t.dataset.sec)];
