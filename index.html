@@ -745,6 +745,47 @@ function getDefaultState(){ return normaliseRefs({
   generatedAt:"2026-07-27T15:30:00Z"
 });}
 
+/* A brand-new customer starts empty, not from the Cyderes deck. Derived from the
+   default state and then cleared, rather than written out by hand, so it keeps the
+   exact shape the renderers and mergeState expect — including any field added later,
+   which would otherwise be missing here and blow up on first render.
+   Every section still exists, just with nothing in it: the owner then populates the
+   ones that matter and reorders or ignores the rest in the edit panel. */
+function getBlankState(programmeName){
+  const s = getDefaultState();
+
+  s.header = {programme: programmeName || "New programme", period: ""};
+  s.goLiveDate = "";
+
+  // Content lists — emptied, not removed, so each section renders its own
+  // "nothing yet" note and can be filled in from the panel.
+  ["readiness","recoveryActions","risks","issues","defects","assumptions","dependencies",
+   "systemsInScope","decisions","criticalPath","customSections","customMetrics",
+   "ganttTracks","gates"].forEach(k=>{ if(Array.isArray(s[k])) s[k] = []; });
+
+  // Counters start from zero so the first risk added is R1.
+  s.refCounters = {};
+
+  Object.keys(s.metrics || {}).forEach(k=>{ s.metrics[k] = 0; });
+
+  // Timeline starts from the Monday of the current week rather than the Cyderes dates.
+  const monday = new Date();
+  monday.setHours(0,0,0,0);
+  monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7));
+  // Build the YYYY-MM-DD from local parts. toISOString() would convert to UTC first,
+  // which lands on the previous day for anyone east of Greenwich and starts the
+  // timeline on a Sunday.
+  const pad = n => String(n).padStart(2, "0");
+  s.ganttStartDate = monday.getFullYear() + "-" + pad(monday.getMonth()+1) + "-" + pad(monday.getDate());
+  s.ganttTitle = "Programme timeline";
+  s.ganttWeeks = 8;
+
+  s.filters = {readiness:"all", risk:"all"};
+  s.generatedAt = new Date().toISOString();
+
+  return normaliseRefs(s);
+}
+
 let state = getDefaultState();
 let saveTimer = null;
 let initialized = false;
@@ -1029,7 +1070,10 @@ async function loadState(){
   // mistyped or stale ?d= link, and silently creating a blank dashboard there would
   // litter the picker with junk that nobody can delete from the UI.
   if(DASHBOARD_SLUG !== DEFAULT_DASHBOARD_SLUG){
-    const err = new Error('No dashboard exists at "?d=' + DASHBOARD_SLUG + '". Check the link, or pick a customer from the dashboard menu.');
+    // Row-level security makes "doesn't exist" and "you can't see it" look identical
+    // from here — deliberately, so the app can't be used to probe which customers
+    // exist. The message therefore covers both.
+    const err = new Error('No dashboard found at "?d=' + DASHBOARD_SLUG + '" — either the link is wrong, or your account does not have access to that customer.');
     err.missingDashboard = true;
     throw err;
   }
@@ -1065,6 +1109,25 @@ async function loadState(){
    revision counter and version history. Creating one never touches another: the
    only shared thing is the admin allowlist, so whoever can edit one can edit all. */
 let dashboardList = [];
+let isOwner = false;   // owners see every customer and may create new ones
+
+/* Owners are the only people who can create a customer, so ask the database rather
+   than guessing — the same function backs the insert policy, so the button and the
+   policy can never disagree. A non-owner simply never sees the button. */
+async function refreshOwnerFlag(){
+  if(STANDALONE || !sb) return false;
+  try{
+    const { data, error } = await sb.rpc("is_dashboard_owner");
+    if(error) throw error;
+    isOwner = !!data;
+  }catch(err){
+    console.error("Could not determine owner status:", err);
+    isOwner = false;   // fail closed
+  }
+  const btn = document.getElementById("btnNewDashboard");
+  if(btn) btn.style.display = isOwner ? "" : "none";
+  return isOwner;
+}
 
 async function fetchDashboardList(){
   if(STANDALONE || !sb) return [];
@@ -1123,12 +1186,11 @@ async function createDashboard(){
     if(confirm(`"${dashboardDisplayName(clash)}" already uses that name. Open it instead?`)) openDashboard(slug);
     return;
   }
-  if(!confirm(`Create a new dashboard for "${name}"?\n\nIt starts from the standard template — the current customer's data is not copied and is not affected.`)) return;
+  if(!confirm(`Create a new dashboard for "${name}"?\n\nIt starts blank — every section is empty and ready to fill in. No data is copied from the customer you are currently viewing, and nothing there is affected.`)) return;
 
-  // Start from the template, not from whatever is on screen, so nothing belonging to
-  // the current customer leaks into the new one. Version history starts empty.
-  const seed = mergeState(getDefaultState());
-  seed.header = Object.assign({}, seed.header, {programme: name});
+  // Blank, not a copy and not the Cyderes deck: an independent dashboard the owner
+  // populates from scratch. Version history starts empty too.
+  const seed = getBlankState(name);
 
   const { error } = await sb.from("dashboards").insert({
     slug: slug,
@@ -2443,6 +2505,7 @@ async function startSession(session){
   revealApp();
 
   await fetchHistory();
+  await refreshOwnerFlag();
   await fetchDashboardList();
   withoutSave(renderDashboard);
 }
