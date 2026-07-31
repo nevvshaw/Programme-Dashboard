@@ -10,6 +10,10 @@
     --bg:#F3F4F8; --paper:#FFFFFF; --ink:#1F2430; --muted:#6B7280; --border:#E2E5EC;
     --green:#2E9E5B; --green-bg:#E7F6ED; --amber:#C7861A; --amber-bg:#FBF0DC;
     --red:#C73E3E; --red-bg:#FBE7E7;
+    /* Gantt bars only — deliberately its own token rather than changing --sky, which
+       also drives buttons, KPI accents and the flow boxes. Chosen dark enough that the
+       white bold labels sitting on the bars stay legible (~4.6:1). */
+    --gantt-bar:#DB2777;
   }
   *{box-sizing:border-box;}
   body{margin:0; background:var(--bg); color:var(--ink); font-family:Calibri,"Segoe UI",Helvetica,Arial,sans-serif; -webkit-font-smoothing:antialiased;}
@@ -150,7 +154,7 @@
   .gantt .hcell.current{background:var(--navy); color:#fff;}
   .gantt .lbl-cell{padding:8px 6px; font-weight:600; color:var(--ink); display:flex; align-items:center;}
   .gantt .cell{background:#F7F8FB; border-radius:3px; min-height:26px; align-self:center;}
-  .gantt .bar{background:var(--sky); border-radius:4px; height:26px; align-self:center; display:flex; align-items:center; padding:0 8px; color:#fff; font-size:10.5px; font-weight:700; white-space:nowrap; overflow:hidden; position:relative; z-index:1;}
+  .gantt .bar{background:var(--gantt-bar); border-radius:4px; height:26px; align-self:center; display:flex; align-items:center; padding:0 8px; color:#fff; font-size:10.5px; font-weight:700; white-space:nowrap; overflow:hidden; position:relative; z-index:1;}
   .gantt-legend{display:flex; gap:16px; margin-top:12px; font-size:11px; color:var(--muted); flex-wrap:wrap;}
 
   .flow{display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-top:6px;}
@@ -200,7 +204,7 @@
        they survive even if a browser ignores the rule above. */
     .gantt .hcell{background:var(--sky-pale) !important; color:var(--navy) !important;}
     .gantt .hcell.current{background:var(--navy) !important; color:#fff !important;}
-    .gantt .bar{background:var(--sky) !important; color:#fff !important;}
+    .gantt .bar{background:var(--gantt-bar) !important; color:#fff !important;}
     .gantt .cell{background:#F7F8FB !important;}
 
     /* ---- Page-break behaviour ----
