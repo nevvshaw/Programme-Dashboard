@@ -1675,7 +1675,11 @@ function renderActionEditRows(){
 function renderRiskRows(){
   document.getElementById("riskRows").innerHTML = state.risks.map((r,i)=>`
     <div class="row-card">
-      <button class="remove-row" data-remove="risk" data-i="${i}">Remove</button>
+      <div style="position:absolute; top:7px; right:7px; display:flex; align-items:center; gap:8px;">
+        <button class="btn-mini" data-move-item-up="risk" data-i="${i}" ${i===0 ? "disabled" : ""}>▲</button>
+        <button class="btn-mini" data-move-item-down="risk" data-i="${i}" ${i===state.risks.length-1 ? "disabled" : ""}>▼</button>
+        <button class="remove-row" style="position:static;" data-remove="risk" data-i="${i}">Remove</button>
+      </div>
       <label>Ref</label>
       <input type="text" class="ref-input" data-field="ref" data-type="risk" data-i="${i}" value="${esc(r.ref||"")}">
       <label>Risk</label>
