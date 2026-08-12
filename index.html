@@ -160,6 +160,8 @@
   .status-pill.completed{background:var(--green-bg); color:var(--green);}
   .status-pill.onhold{background:#EFE4F7; color:#7C3AED;}
   .status-pill.started{background:var(--green-bg); color:var(--green);}
+  .status-pill.open{background:#EEF0F5; color:var(--muted);}
+  .status-pill.closed{background:var(--green-bg); color:var(--green);}
 
   .gantt{display:grid; grid-template-columns:190px repeat(8,1fr); gap:3px; font-size:11px;}
   .gantt .hcell{padding:6px 4px; text-align:center; font-weight:700; color:var(--navy); background:var(--sky-pale); border-radius:4px;}
@@ -1644,7 +1646,8 @@ function renderMetricFields(){
     if(g.computed){
       // These figures aren't typed in — they're read straight from the Open
       // Defects section so the KPI tile can never drift from the actual log.
-      const computedValues = { defOpen: state.defects.length, p1Open: state.defects.filter(d=>d.severity==="P1").length };
+      const openDefectsForMeta = state.defects.filter(d=>(d.status||"open")!=="closed");
+      const computedValues = { defOpen: openDefectsForMeta.length, p1Open: openDefectsForMeta.filter(d=>d.severity==="P1").length };
       return `
         <div class="row-card">
           <button class="remove-row" data-remove-group="${g.id}">Remove</button>
@@ -1730,6 +1733,9 @@ function renderReadinessRows(){
 
 const STATUS_OPTS = [["notstarted","Not started"],["inprogress","In progress"],["complete","Complete"]];
 const PROGRESS_OPTS = [["notstarted","Not Started"],["inprogress","In Progress"],["onhold","On Hold"],["completed","Completed"]];
+// Defects use "Closed" rather than "Completed" — closing a bug isn't the same verb
+// as completing an action, and the section is literally titled "Open Defects".
+const DEFECT_STATUS_OPTS = [["open","Open"],["inprogress","In Progress"],["closed","Closed"]];
 function renderActionEditRows(){
   document.getElementById("actionRows").innerHTML = state.recoveryActions.map((a,i)=>`
     <div class="row-card">
@@ -1839,6 +1845,10 @@ function renderDefectRows(){
           </select>
         </div>
       </div>
+      <label>Status</label>
+      <select data-field="status" data-type="defect" data-i="${i}">
+        ${DEFECT_STATUS_OPTS.map(([v,l])=>`<option value="${v}" ${(d.status||"open")===v?"selected":""}>${l}</option>`).join("")}
+      </select>
       <label>Description</label>
       <input type="text" data-field="description" data-type="defect" data-i="${i}" value="${esc(d.description)}">
       <div class="row-grid">
@@ -2114,11 +2124,15 @@ function kpiValues(st){
   const m = st.metrics || {};
   const n = v => Number(v) || 0;
   const pct = (part, total) => n(total) > 0 ? (n(part)/n(total))*100 : 0;
+  // Matches the live "Defects open" tile: closed defects stay logged but drop out
+  // of the open count. Kept in one place so the trend comparison can never disagree
+  // with what the tile shows right now for the same document.
   const defects = Array.isArray(st.defects) ? st.defects : [];
+  const openDefects = defects.filter(d => d && (d.status||"open") !== "closed");
   return {
     uatExecPct:  Math.round(pct(n(m.uatPassed) + n(m.uatFailed), m.uatTotal)),
-    defOpen:     defects.length,
-    defOpenP1:   defects.filter(d => d && d.severity === "P1").length,
+    defOpen:     openDefects.length,
+    defOpenP1:   openDefects.filter(d => d.severity === "P1").length,
     defClosedPct:Math.round(pct(m.defClosed, m.defTotal)),
     cutoverPct:  Math.round(pct(m.cutStarted, m.cutTotal)),
     msOppPct:    pct(m.msOppPassed, m.msOppTotal),
@@ -2180,9 +2194,12 @@ function renderDashboard(){
 
   // "Defects open" is pulled live from the Open Defects section below rather
   // than typed in separately — the two numbers drifting apart (KPI tile vs.
-  // the actual log) was exactly the reconciliation gap flagged earlier.
-  const defOpenCount = p.defects.length;
-  const defOpenP1Count = p.defects.filter(d=>d.severity==="P1").length;
+  // the actual log) was exactly the reconciliation gap flagged earlier. A closed
+  // defect stays in the log (its history has value) but no longer counts as open —
+  // otherwise resolving every defect would leave this tile stuck showing 3.
+  const openDefects = p.defects.filter(d=>(d.status||"open")!=="closed");
+  const defOpenCount = openDefects.length;
+  const defOpenP1Count = openDefects.filter(d=>d.severity==="P1").length;
 
   const uatExecuted = m.uatPassed + m.uatFailed;
   const uatExecPct = m.uatTotal>0 ? Math.round((uatExecuted/m.uatTotal)*100) : 0;
@@ -2431,20 +2448,22 @@ function renderDashboard(){
     <div class="card">
       <div class="card-head"><h3>Open Defects this week</h3></div>
       <table>
-        <thead><tr><th>Defect #</th><th>Description</th><th>Sev.</th><th>Owner</th><th>Comments</th><th>Date for resolution</th></tr></thead>
+        <thead><tr><th>Defect #</th><th>Description</th><th>Sev.</th><th>Status</th><th>Owner</th><th>Comments</th><th>Date for resolution</th></tr></thead>
         <tbody>
           ${p.defects.length ? p.defects.map(d=>{
             const rd = d.resolutionDate ? new Date(d.resolutionDate+"T00:00:00") : null;
+            const st = d.status || "open";
             return `
             <tr>
               <td>${esc(d.defectNo) || "—"}</td>
               <td>${esc(d.description)}</td>
               <td><span class="sev ${d.severity.toLowerCase()}">${esc(d.severity)}</span></td>
+              <td><span class="status-pill ${st}">${DEFECT_STATUS_OPTS.find(o=>o[0]===st)?.[1] || "Open"}</span></td>
               <td>${esc(d.owner)}</td>
               <td>${esc(d.comments||"")}</td>
               <td>${rd ? esc(fmtDate(rd)) : "—"}</td>
             </tr>`;
-          }).join("") : `<tr><td colspan="6" class="empty-note">No open defects logged.</td></tr>`}
+          }).join("") : `<tr><td colspan="7" class="empty-note">No open defects logged.</td></tr>`}
         </tbody>
       </table>
     </div>`,
@@ -2820,7 +2839,7 @@ panel.addEventListener("click", e=>{
     if(type==="action") arr.push({seq:arr.length+1, title:"New action", desc:"", status:"notstarted", rag:"g"});
     if(type==="risk") arr.push({ref:nextRef("risks"), risk:"", impact:"Medium", mitigation:""});
     if(type==="issue") arr.push({ref:nextRef("issues"), issue:"", sev:"P2", rag:"r", progress:"notstarted", action:"", comments:""});
-    if(type==="defect") arr.push({defectNo:"", description:"", severity:"P2", owner:"", comments:"", resolutionDate:""});
+    if(type==="defect") arr.push({defectNo:"", description:"", severity:"P2", status:"open", owner:"", comments:"", resolutionDate:""});
     if(type==="decision") arr.push({title:"", detail:"", status:"Pending"});
     if(type==="ganttTrack") arr.push({name:"New track", start:1, end:1});
     if(type==="ganttGate") arr.push({label:"New gate", date: state.ganttStartDate});
