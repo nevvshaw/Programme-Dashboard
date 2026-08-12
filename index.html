@@ -457,7 +457,7 @@
       </div>
 
       <div class="field-group">
-        <h2>Open Defects</h2>
+        <h2>Open Defects this week</h2>
         <p class="hint" style="margin-bottom:10px;">Log every open defect here for review — defect number, description, severity, owner, comments, and target resolution date.</p>
         <div id="defectRows"></div>
         <button class="add-row" data-add="defect">+ Add defect</button>
@@ -1509,7 +1509,7 @@ const SECTION_LABELS = {
   gantt:"Programme timeline (Gantt)",
   risks:"Risks",
   issues:"Issues",
-  defects:"Open Defects",
+  defects:"Open Defects this week",
   assumptions:"Assumptions",
   dependencies:"Dependencies",
   systemsInScope:"Systems in scope — discovery",
@@ -2202,7 +2202,7 @@ function renderDashboard(){
 
     defects: () => `
     <div class="card">
-      <div class="card-head"><h3>Open Defects</h3></div>
+      <div class="card-head"><h3>Open Defects this week</h3></div>
       <table>
         <thead><tr><th>Defect #</th><th>Description</th><th>Sev.</th><th>Owner</th><th>Comments</th><th>Date for resolution</th></tr></thead>
         <tbody>
