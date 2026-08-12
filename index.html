@@ -167,6 +167,16 @@
 
   .footer-strip{background:var(--sky-pale); border:1px solid var(--border); border-radius:10px; padding:12px 20px; font-size:10.5px; color:var(--navy); font-weight:600; display:flex; justify-content:space-between; flex-wrap:wrap; gap:6px;}
 
+  /* Collapsible card head — the whole bar is the hit target, not just the chevron. */
+  .collapsible-head{cursor:pointer; user-select:none; margin-bottom:0;}
+  .collapsible-head:hover h3{color:var(--sky);}
+  .collapsible-head:focus-visible{outline:2px solid var(--sky); outline-offset:3px; border-radius:4px;}
+  .collapsible-head h3{display:flex; align-items:center; gap:7px;}
+  .collapsible-head .chevron{display:inline-block; transition:transform .15s ease; font-size:11px; color:var(--sky);}
+  .card:not(.collapsed) > .collapsible-head{margin-bottom:14px;}
+  .card:not(.collapsed) > .collapsible-head .chevron{transform:rotate(90deg);}
+  .card.collapsed > .collapsible-body{display:none;}
+
   .version-item{display:flex; justify-content:space-between; align-items:center; gap:12px; padding:10px 12px; border:1px solid var(--border); border-radius:8px; margin-bottom:8px; background:#FCFCFE; flex-wrap:wrap;}
   .version-item .meta{font-size:12px;}
   .version-item .v-label{font-weight:700; color:var(--navy); display:block;}
@@ -1465,6 +1475,24 @@ function setPanelCollapsed(collapsed){
   try{ localStorage.setItem(PANEL_STATE_KEY, collapsed ? "1" : "0"); }catch(err){}
 }
 
+/* ---- Version history collapse ----
+   Like the input panel, this is a per-browser view preference rather than programme
+   data, so it belongs in localStorage and not in the shared Supabase document — one
+   person folding it away must not fold it away for everyone. Collapsed by default:
+   the list grows every week and sits at the foot of every dashboard. */
+const HISTORY_STATE_KEY = "golive-dashboard-history-collapsed";
+let versionHistoryCollapsed = true;
+try{ versionHistoryCollapsed = localStorage.getItem(HISTORY_STATE_KEY) !== "0"; }catch(err){}
+
+function setVersionHistoryCollapsed(collapsed){
+  versionHistoryCollapsed = collapsed;
+  const card = document.getElementById("versionHistoryCard");
+  const head = document.getElementById("versionHistoryToggle");
+  if(card) card.classList.toggle("collapsed", collapsed);
+  if(head) head.setAttribute("aria-expanded", collapsed ? "false" : "true");
+  try{ localStorage.setItem(HISTORY_STATE_KEY, collapsed ? "1" : "0"); }catch(err){}
+}
+
 function esc(str){ return String(str ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
 function daysBetween(a,b){ return Math.round((b-a)/86400000); }
 
@@ -2302,6 +2330,9 @@ function renderDashboard(){
     .map(id => sectionHTML[id]())
     .join("");
 
+  // Shown in the collapsed header so the section still says how much is in it.
+  const historyCount = loadHistory().length;
+
   const dash = document.getElementById("dash");
   dash.innerHTML = `
     <div class="print-logos">
@@ -2318,11 +2349,13 @@ function renderDashboard(){
 
     ${orderedSections}
 
-    <div class="card" id="versionHistoryCard">
-      <div class="card-head">
-        <h3>Version history</h3>
+    <div class="card ${versionHistoryCollapsed ? "collapsed" : ""}" id="versionHistoryCard">
+      <div class="card-head collapsible-head" id="versionHistoryToggle" role="button" tabindex="0"
+           aria-expanded="${versionHistoryCollapsed ? "false" : "true"}" aria-controls="versionHistoryBody">
+        <h3><span class="chevron">▸</span>Version history${historyCount ? ` (${historyCount})` : ""}</h3>
         <span style="font-size:11px; color:var(--muted);">Saved snapshots — kept for weekly reviews</span>
       </div>
+      <div id="versionHistoryBody" class="collapsible-body">
       ${(() => {
         const history = loadHistory();
         if(!history.length) return `<div class="empty-note">${STANDALONE
@@ -2340,6 +2373,7 @@ function renderDashboard(){
             </div>`}
           </div>`).join("");
       })()}
+      </div>
     </div>
 
     <div class="footer-strip">
@@ -2354,6 +2388,19 @@ function renderDashboard(){
   if(filterReadiness) filterReadiness.addEventListener("change", e=>{ state.filters.readiness = e.target.value; renderDashboard(); });
   const filterRisk = document.getElementById("filterRisk");
   if(filterRisk) filterRisk.addEventListener("change", e=>{ state.filters.risk = e.target.value; renderDashboard(); });
+  // Bound here rather than delegated, because dash.innerHTML replaces this element on
+  // every render. Keyboard support included since the head is a div, not a button.
+  const historyToggle = document.getElementById("versionHistoryToggle");
+  if(historyToggle){
+    historyToggle.addEventListener("click", ()=> setVersionHistoryCollapsed(!versionHistoryCollapsed));
+    historyToggle.addEventListener("keydown", e=>{
+      if(e.key === "Enter" || e.key === " "){
+        e.preventDefault();
+        setVersionHistoryCollapsed(!versionHistoryCollapsed);
+      }
+    });
+  }
+
   // Version ids are Supabase uuids, not the Date.now() numbers they used to be —
   // Number("a3f2-…") is NaN, which would make every Restore/Delete silently do nothing.
   dash.querySelectorAll("[data-restore-version]").forEach(btn=>{
