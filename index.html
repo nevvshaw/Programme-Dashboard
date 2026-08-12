@@ -1879,7 +1879,11 @@ function renderCustomSectionRows(){
         <input type="text" data-sec="${si}" data-secfield="title" value="${esc(sec.title)}">
         ${sec.rows.map((row,ri)=>`
           <div class="sub-row-card">
-            <button class="remove-subrow" data-sec="${si}" data-subrow="${ri}">Remove row</button>
+            <div style="position:absolute; top:7px; right:7px; display:flex; align-items:center; gap:8px;">
+              <button class="btn-mini" data-move-subrow-up="${si}" data-subrow="${ri}" ${ri===0 ? "disabled" : ""}>▲</button>
+              <button class="btn-mini" data-move-subrow-down="${si}" data-subrow="${ri}" ${ri===sec.rows.length-1 ? "disabled" : ""}>▼</button>
+              <button class="remove-subrow" style="position:static;" data-sec="${si}" data-subrow="${ri}">Remove row</button>
+            </div>
             <label>${sec.numbered ? `Item ${ri+1}` : "Item"}</label>
             <input type="text" data-sec="${si}" data-subrow="${ri}" data-subfield="item" value="${esc(row.item)}">
             <div class="row-grid">
@@ -2471,6 +2475,31 @@ panel.addEventListener("click", e=>{
     const idx = parseInt(moveItemDownBtn.dataset.i);
     if(arr && idx < arr.length-1){
       [arr[idx+1], arr[idx]] = [arr[idx], arr[idx+1]];
+      renderForm(); renderDashboard();
+    }
+    return;
+  }
+
+  // Rows inside a custom table section (Follow up Actions and the like). These live
+  // in sec.rows rather than a top-level array, so they need their own handler —
+  // ARR_MAP has no entry for them.
+  const subUpBtn = e.target.closest("[data-move-subrow-up]");
+  if(subUpBtn){
+    const sec = state.customSections[parseInt(subUpBtn.dataset.moveSubrowUp)];
+    const idx = parseInt(subUpBtn.dataset.subrow);
+    if(sec && Array.isArray(sec.rows) && idx > 0){
+      [sec.rows[idx-1], sec.rows[idx]] = [sec.rows[idx], sec.rows[idx-1]];
+      renderForm(); renderDashboard();
+    }
+    return;
+  }
+
+  const subDownBtn = e.target.closest("[data-move-subrow-down]");
+  if(subDownBtn){
+    const sec = state.customSections[parseInt(subDownBtn.dataset.moveSubrowDown)];
+    const idx = parseInt(subDownBtn.dataset.subrow);
+    if(sec && Array.isArray(sec.rows) && idx < sec.rows.length-1){
+      [sec.rows[idx+1], sec.rows[idx]] = [sec.rows[idx], sec.rows[idx+1]];
       renderForm(); renderDashboard();
     }
     return;
