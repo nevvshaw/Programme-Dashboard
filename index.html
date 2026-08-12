@@ -769,7 +769,7 @@ function getDefaultState(){ return normaliseRefs({
     ]}
   ],
 
-  sectionOrder:["gantt","kpis","readiness","recoveryActions","risks","customSections","issues","defects","assumptions","dependencies","systemsInScope","decisions","criticalPath"],
+  sectionOrder:["gantt","kpis","trend","readiness","recoveryActions","risks","customSections","issues","defects","assumptions","dependencies","systemsInScope","decisions","criticalPath"],
 
   filters:{readiness:"all", risk:"all"},
 
@@ -1581,7 +1581,8 @@ const SECTION_LABELS = {
   dependencies:"Dependencies",
   systemsInScope:"Systems in scope — discovery",
   decisions:"Decisions needed this week",
-  customSections:"Custom sections"
+  customSections:"Custom sections",
+  trend:"Week-on-week movement"
 };
 
 /* Which sections this customer actually shows. Stored as a list of hidden ids rather
@@ -2164,57 +2165,102 @@ function renderDashboard(){
   const riskFiltered = p.filters.risk === "all" ? p.risks : p.risks.filter(r=>r.impact===p.filters.risk);
 
   const sectionHTML = {
+    /* Week-on-week movement, kept as its own section so the metric tiles and the
+       readiness scorecard render exactly as they did before. */
+    trend: () => {
+      if(!baseline){
+        return `
+        <div class="card">
+          <div class="card-head"><h3>Week-on-week movement</h3></div>
+          <div class="empty-note">Nothing to compare against yet. Use "Save weekly version" in the top bar — the next time you open the dashboard, this section shows what has moved since that snapshot.</div>
+        </div>`;
+      }
+      const prevV = baseline.values;
+      const rows = [
+        {label:p.metricMeta.uat.label,      now:uatExecPct,   was:prevV.uatExecPct,   suffix:"%", good:"up"},
+        {label:p.metricMeta.defOpen.label,  now:defOpenCount, was:prevV.defOpen,      suffix:"",  good:"down"},
+        {label:"P1 defects open",           now:defOpenP1Count, was:prevV.defOpenP1,  suffix:"",  good:"down"},
+        {label:p.metricMeta.defClosed.label,now:defClosedPct, was:prevV.defClosedPct, suffix:"%", good:"up"},
+        {label:p.metricMeta.cutover.label,  now:cutoverPct,   was:prevV.cutoverPct,   suffix:"%", good:"up"},
+        {label:p.metricMeta.msOpp.label,    now:msOppPct,     was:prevV.msOppPct,     suffix:"%", good:"up", decimals:2},
+        {label:p.metricMeta.prodOpp.label,  now:prodOppPct,   was:prevV.prodOppPct,   suffix:"%", good:"up", decimals:2},
+        {label:p.metricMeta.psOpp.label,    now:psOppPct,     was:prevV.psOppPct,     suffix:"%", good:"up", decimals:2},
+        {label:"Open risks",                now:p.risks.length,  was:prevV.risks,     suffix:"",  good:"down"},
+        {label:"Open issues",               now:p.issues.length, was:prevV.issues,    suffix:"",  good:"down"}
+      ];
+      const fmt = (v,d) => (d ? Number(v).toFixed(d) : Math.round(Number(v)));
+      const moved = p.readiness.map(r => ({row:r, tag:ragMoveTag(r)})).filter(x => x.tag);
+
+      return `
+      <div class="card">
+        <div class="card-head">
+          <h3>Week-on-week movement</h3>
+          <span style="font-size:11px; color:var(--muted);">since ${esc(baseline.label)} · ${esc(formatTimestamp(baseline.timestamp))}</span>
+        </div>
+        <table>
+          <thead><tr><th>Measure</th><th style="width:70px;">Was</th><th style="width:70px;">Now</th><th style="width:110px;">Change</th></tr></thead>
+          <tbody>
+            ${rows.map(r=>`
+              <tr>
+                <td><strong>${esc(r.label)}</strong></td>
+                <td>${fmt(r.was, r.decimals)}${r.suffix}</td>
+                <td>${fmt(r.now, r.decimals)}${r.suffix}</td>
+                <td>${deltaTag(r.now, r.was, {suffix:r.suffix, goodDirection:r.good, decimals:r.decimals})}</td>
+              </tr>`).join("")}
+          </tbody>
+        </table>
+        <div style="margin-top:14px;">
+          <div class="lbl" style="font-size:10.5px; text-transform:uppercase; letter-spacing:.4px; color:var(--muted); font-weight:700; margin-bottom:6px;">Readiness changes</div>
+          ${moved.length
+            ? `<ul class="ref-list">${moved.map(x=>`<li><span>${esc(x.row.area)}</span>${x.tag}</li>`).join("")}</ul>`
+            : `<div class="empty-note" style="padding:2px 0;">No readiness area changed status this week.</div>`}
+        </div>
+      </div>`;
+    },
+
     kpis: () => `
-    ${baseline ? `<p class="baseline-note">▲▼ shows movement since <strong>${esc(baseline.label)}</strong> (${esc(formatTimestamp(baseline.timestamp))}). Save a weekly version to move the comparison point.</p>` : ""}
     <div class="kpi-grid">
       ${p.metricMeta.uat.removed ? "" : `
       <div class="kpi-card ${uatExecPct>=70?'good':uatExecPct>=30?'warn':'crit'}">
         <div class="num">${uatExecPct}%</div>
         <div class="lbl">${esc(p.metricMeta.uat.label)}</div>
         <div class="sub">${uatExecuted} of ${m.uatTotal} cases (${m.uatFailed} failed)</div>
-        ${deltaTag(uatExecPct, prev && prev.uatExecPct, {suffix:"%", goodDirection:"up"})}
       </div>`}
       ${p.metricMeta.defOpen.removed ? "" : `
       <div class="kpi-card ${defOpenP1Count>0?'crit':'good'}">
         <div class="num">${defOpenCount}</div>
         <div class="lbl">${esc(p.metricMeta.defOpen.label)}</div>
         <div class="sub">${defOpenP1Count} P1 (financial-integrity)</div>
-        ${deltaTag(defOpenCount, prev && prev.defOpen, {goodDirection:"down", epsilon:0.5})}
       </div>`}
       ${p.metricMeta.defClosed.removed ? "" : `
       <div class="kpi-card ${defClosedPct>=70?'good':defClosedPct>=40?'warn':'crit'}">
         <div class="num">${defClosedPct}%</div>
         <div class="lbl">${esc(p.metricMeta.defClosed.label)}</div>
         <div class="sub">${m.defClosed} of ${m.defTotal} logged</div>
-        ${deltaTag(defClosedPct, prev && prev.defClosedPct, {suffix:"%", goodDirection:"up"})}
       </div>`}
       ${p.metricMeta.cutover.removed ? "" : `
       <div class="kpi-card ${cutoverPct>0?'warn':'crit'}">
         <div class="num">${m.cutStarted}/${m.cutTotal}</div>
         <div class="lbl">${esc(p.metricMeta.cutover.label)}</div>
         <div class="sub">Plan needs a new baseline</div>
-        ${deltaTag(cutoverPct, prev && prev.cutoverPct, {suffix:"%", goodDirection:"up"})}
       </div>`}
       ${p.metricMeta.msOpp.removed ? "" : `
       <div class="kpi-card ${msOppPct>=70?'good':msOppPct>=40?'warn':'crit'}">
         <div class="num">${msOppPct.toFixed(2)}%</div>
         <div class="lbl">${esc(p.metricMeta.msOpp.label)}</div>
         <div class="sub">${m.msOppPassed} of ${m.msOppTotal} test cases passed</div>
-        ${deltaTag(msOppPct, prev && prev.msOppPct, {suffix:"%", goodDirection:"up", decimals:2})}
       </div>`}
       ${p.metricMeta.prodOpp.removed ? "" : `
       <div class="kpi-card ${prodOppPct>=70?'good':prodOppPct>=40?'warn':'crit'}">
         <div class="num">${prodOppPct.toFixed(2)}%</div>
         <div class="lbl">${esc(p.metricMeta.prodOpp.label)}</div>
         <div class="sub">${m.prodOppPassed} of ${m.prodOppTotal} test cases passed</div>
-        ${deltaTag(prodOppPct, prev && prev.prodOppPct, {suffix:"%", goodDirection:"up", decimals:2})}
       </div>`}
       ${p.metricMeta.psOpp.removed ? "" : `
       <div class="kpi-card ${psOppPct>=70?'good':psOppPct>=40?'warn':'crit'}">
         <div class="num">${psOppPct.toFixed(2)}%</div>
         <div class="lbl">${esc(p.metricMeta.psOpp.label)}</div>
         <div class="sub">${m.psOppPassed} of ${m.psOppTotal} test cases passed</div>
-        ${deltaTag(psOppPct, prev && prev.psOppPct, {suffix:"%", goodDirection:"up", decimals:2})}
       </div>`}
       <div class="kpi-card ${daysToGoLive!==null && daysToGoLive<14?'crit':daysToGoLive!==null && daysToGoLive<30?'warn':''}">
         <div class="num">${daysToGoLive!==null ? daysToGoLive : "—"}</div>
@@ -2245,7 +2291,7 @@ function renderDashboard(){
           ${readinessFiltered.length ? readinessFiltered.map(r=>`
             <tr>
               <td><strong>${esc(r.area)}</strong></td>
-              <td><span class="pill ${r.rag}"><span class="dot"></span>${RAG_LABEL[r.rag]}</span>${ragMoveTag(r)}</td>
+              <td><span class="pill ${r.rag}"><span class="dot"></span>${RAG_LABEL[r.rag]}</span></td>
               <td>${esc(r.evidence)}</td>
               <td>${esc(r.mustClear)}</td>
               <td>${esc(r.owner)}</td>
