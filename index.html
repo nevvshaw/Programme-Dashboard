@@ -782,6 +782,11 @@ function getDefaultState(){ return normaliseRefs({
   // week's numbers. It lets loadState() tell "this browser has a stale save from
   // an older version of the file" apart from "this browser has today's edits" —
   // see the version check in loadState() below.
+  // Which saved version the Week-on-week movement section compares against. null
+  // means "always the most recent save" (the original, still the default). Shared
+  // with the rest of the team via the document, like the readiness/risk filters
+  // below, so everyone looking at this customer sees the same comparison point.
+  trendBaselineId:null,
   generatedAt:"2026-07-27T15:30:00Z"
 });}
 
@@ -1360,18 +1365,23 @@ async function fetchBaseline(){
   baseline = null;
   if(STANDALONE || !sb || !dashboardId) return;
   try{
-    const { data, error } = await sb
-      .from("dashboard_versions")
-      .select("label, created_at, data")
-      .eq("dashboard_id", dashboardId)
-      .order("created_at", { ascending:false })
-      .limit(1)
-      .maybeSingle();
+    // state.trendBaselineId picks a specific snapshot; null falls back to the
+    // original behaviour of always comparing against the most recent one.
+    let query = sb.from("dashboard_versions").select("id, label, created_at, data").eq("dashboard_id", dashboardId);
+    query = state.trendBaselineId
+      ? query.eq("id", state.trendBaselineId)
+      : query.order("created_at", { ascending:false }).limit(1);
+    const { data, error } = await query.maybeSingle();
     if(error) throw error;
-    if(!data || !data.data) return;
+    if(!data || !data.data){
+      // The chosen snapshot no longer exists (deleted since it was picked) — fall
+      // back to "most recent" rather than silently showing no comparison at all.
+      if(state.trendBaselineId){ state.trendBaselineId = null; return fetchBaseline(); }
+      return;
+    }
     const values = kpiValues(data.data);
     if(!values) return;
-    baseline = { label: data.label || "the last saved version", timestamp: data.created_at, values };
+    baseline = { id: data.id, label: data.label || "the last saved version", timestamp: data.created_at, values };
   }catch(err){
     // A missing baseline is not an error state — the dashboard simply shows no deltas.
     console.error("Could not load the comparison snapshot:", err);
@@ -2193,10 +2203,22 @@ function renderDashboard(){
     /* Week-on-week movement, kept as its own section so the metric tiles and the
        readiness scorecard render exactly as they did before. */
     trend: () => {
+      // Newest first, matching loadHistory()'s own order — the picker and the
+      // "Save weekly version" list should read the same way.
+      const history = loadHistory();
+      const picker = (!STANDALONE && history.length) ? `
+        <div class="tb-field" style="align-items:flex-start;">
+          <label for="trendBaselineSelect" style="text-transform:uppercase; font-size:10px; letter-spacing:.4px; color:var(--muted); font-weight:700;">Compare against</label>
+          <select id="trendBaselineSelect" class="filter-select" style="min-width:220px;">
+            <option value="">Most recent save${(!state.trendBaselineId && baseline) ? "  (now: " + esc(baseline.label) + ")" : ""}</option>
+            ${history.map(h => `<option value="${esc(h.id)}" ${state.trendBaselineId===h.id?"selected":""}>${esc(h.label)} — ${esc(formatTimestamp(h.timestamp))}</option>`).join("")}
+          </select>
+        </div>` : "";
+
       if(!baseline){
         return `
         <div class="card">
-          <div class="card-head"><h3>Week-on-week movement</h3></div>
+          <div class="card-head"><h3>Week-on-week movement</h3>${picker}</div>
           <div class="empty-note">Nothing to compare against yet. Use "Save weekly version" in the top bar — the next time you open the dashboard, this section shows what has moved since that snapshot.</div>
         </div>`;
       }
@@ -2220,8 +2242,9 @@ function renderDashboard(){
       <div class="card">
         <div class="card-head">
           <h3>Week-on-week movement</h3>
-          <span style="font-size:11px; color:var(--muted);">since ${esc(baseline.label)} · ${esc(formatTimestamp(baseline.timestamp))}</span>
+          ${picker}
         </div>
+        <p class="baseline-note" style="margin-top:-4px;">Comparing against <strong>${esc(baseline.label)}</strong> · ${esc(formatTimestamp(baseline.timestamp))}</p>
         <table>
           <thead><tr><th>Measure</th><th style="width:70px;">Was</th><th style="width:70px;">Now</th><th style="width:110px;">Change</th></tr></thead>
           <tbody>
@@ -2561,6 +2584,14 @@ function renderDashboard(){
   if(filterReadiness) filterReadiness.addEventListener("change", e=>{ state.filters.readiness = e.target.value; renderDashboard(); });
   const filterRisk = document.getElementById("filterRisk");
   if(filterRisk) filterRisk.addEventListener("change", e=>{ state.filters.risk = e.target.value; renderDashboard(); });
+  // Absent whenever the trend section has nothing to compare against, or is switched
+  // off for this customer, or this is a frozen Share-as-HTML export.
+  const trendBaselineSelect = document.getElementById("trendBaselineSelect");
+  if(trendBaselineSelect) trendBaselineSelect.addEventListener("change", async e=>{
+    state.trendBaselineId = e.target.value || null;   // "" (Most recent) -> null
+    await fetchBaseline();
+    renderDashboard();   // re-render picks up the new baseline and schedules a save
+  });
   // Bound here rather than delegated, because dash.innerHTML replaces this element on
   // every render. Keyboard support included since the head is a div, not a button.
   const historyToggle = document.getElementById("versionHistoryToggle");
