@@ -104,6 +104,13 @@
   .kpi-card .sub{font-size:11px; color:var(--muted); margin-top:6px; line-height:1.4;}
   .kpi-card.warn{border-top-color:var(--amber);} .kpi-card.crit{border-top-color:var(--red);} .kpi-card.good{border-top-color:var(--green);}
 
+  /* Week-on-week movement. Direction of travel is carried by the arrow and the wording
+     as well as the colour, so the meaning survives a mono print and colour blindness. */
+  .delta{display:inline-flex; align-items:center; gap:3px; margin-top:6px; font-size:10.5px; font-weight:700; white-space:nowrap;}
+  .delta.up{color:var(--green);} .delta.down{color:var(--red);} .delta.flat{color:var(--muted); font-weight:600;}
+  td .delta{margin-top:4px; margin-left:6px;}
+  .baseline-note{font-size:11px; color:var(--muted); margin:-6px 0 12px;}
+
   .card{background:var(--paper); border:1px solid var(--border); border-radius:10px; padding:18px 20px;}
   .card-head{display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; flex-wrap:wrap; gap:10px;}
   .card-head h3{margin:0; font-size:13.5px; text-transform:uppercase; letter-spacing:.5px; color:var(--navy); font-weight:700;}
@@ -984,6 +991,7 @@ async function handleConflict(){
     lastSavedAt = new Date();
     setSaveStatus("saved");
     await fetchHistory();
+    await fetchBaseline();
     withoutSave(renderDashboard);
   }catch(err){
     console.error("Could not resolve the conflict:", err);
@@ -1337,6 +1345,35 @@ let historyCache = [];
 
 function loadHistory(){ return historyCache; }
 
+/* The snapshot the dashboard compares itself against — the most recent saved version.
+   Only ONE document is fetched, and only its derived numbers are kept; the snapshot
+   itself is released immediately. That keeps the reasoning behind fetchHistory()
+   intact: never pull fifty full documents just to render headline figures. */
+let baseline = null;
+
+async function fetchBaseline(){
+  baseline = null;
+  if(STANDALONE || !sb || !dashboardId) return;
+  try{
+    const { data, error } = await sb
+      .from("dashboard_versions")
+      .select("label, created_at, data")
+      .eq("dashboard_id", dashboardId)
+      .order("created_at", { ascending:false })
+      .limit(1)
+      .maybeSingle();
+    if(error) throw error;
+    if(!data || !data.data) return;
+    const values = kpiValues(data.data);
+    if(!values) return;
+    baseline = { label: data.label || "the last saved version", timestamp: data.created_at, values };
+  }catch(err){
+    // A missing baseline is not an error state — the dashboard simply shows no deltas.
+    console.error("Could not load the comparison snapshot:", err);
+    baseline = null;
+  }
+}
+
 /* Deliberately does NOT select the `data` column. Every snapshot is a full copy of the
    whole dashboard document (tens to hundreds of KB); pulling all of them just to render
    a list of labels would move megabytes on each refresh. The document is fetched lazily,
@@ -1373,6 +1410,7 @@ async function addVersionSnapshot(label){
     });
     if(error) throw error;
     await fetchHistory();
+    await fetchBaseline();
     withoutSave(renderDashboard);
   }catch(err){
     console.error("Could not save version:", err);
@@ -1407,6 +1445,7 @@ async function deleteVersion(id){
     const { error } = await sb.from("dashboard_versions").delete().eq("id", id);
     if(error) throw error;
     await fetchHistory();
+    await fetchBaseline();
     withoutSave(renderDashboard);
   }catch(err){
     console.error("Could not delete version:", err);
@@ -2044,10 +2083,64 @@ function renderGantt(){
 }
 
 
+/* ---- Week-on-week comparison ----
+   Every headline number derived from a document, so the current state and a saved
+   snapshot are measured exactly the same way. Anything added here is automatically
+   comparable; deriving the baseline separately is how the two quietly drift apart. */
+function kpiValues(st){
+  if(!st || typeof st !== "object") return null;
+  const m = st.metrics || {};
+  const n = v => Number(v) || 0;
+  const pct = (part, total) => n(total) > 0 ? (n(part)/n(total))*100 : 0;
+  const defects = Array.isArray(st.defects) ? st.defects : [];
+  return {
+    uatExecPct:  Math.round(pct(n(m.uatPassed) + n(m.uatFailed), m.uatTotal)),
+    defOpen:     defects.length,
+    defOpenP1:   defects.filter(d => d && d.severity === "P1").length,
+    defClosedPct:Math.round(pct(m.defClosed, m.defTotal)),
+    cutoverPct:  Math.round(pct(m.cutStarted, m.cutTotal)),
+    msOppPct:    pct(m.msOppPassed, m.msOppTotal),
+    prodOppPct:  pct(m.prodOppPassed, m.prodOppTotal),
+    psOppPct:    pct(m.psOppPassed, m.psOppTotal),
+    risks:       Array.isArray(st.risks) ? st.risks.length : 0,
+    issues:      Array.isArray(st.issues) ? st.issues.length : 0,
+    readiness:   Object.fromEntries((Array.isArray(st.readiness) ? st.readiness : [])
+                   .map(r => [String(r.area || "").trim().toLowerCase(), r.rag]))
+  };
+}
+
+/* Renders the change against the baseline. `goodDirection` says which way is
+   progress, so a fall in open defects reads as green and a fall in UAT execution
+   reads as red — an unsigned delta would be actively misleading. */
+function deltaTag(current, previous, opts){
+  if(!baseline || previous === undefined || previous === null) return "";
+  const o = opts || {};
+  const diff = current - previous;
+  if(Math.abs(diff) < (o.epsilon || 0.5)) return `<span class="delta flat" title="No change since ${esc(baseline.label)}">— no change</span>`;
+  const better = (o.goodDirection === "down") ? diff < 0 : diff > 0;
+  const shown = (o.decimals ? Math.abs(diff).toFixed(o.decimals) : Math.round(Math.abs(diff)));
+  return `<span class="delta ${better ? "up" : "down"}" title="Was ${o.decimals ? previous.toFixed(o.decimals) : Math.round(previous)} at ${esc(baseline.label)}">`
+       + `${diff > 0 ? "▲" : "▼"} ${shown}${o.suffix || ""}</span>`;
+}
+
+/* Did this readiness area's RAG move since the baseline? Matched on the area name,
+   lowercased and trimmed, because that is the only stable identifier a readiness row
+   has — renaming an area reads as a new area, which is the safe failure. */
+function ragMoveTag(row){
+  if(!baseline || !row) return "";
+  const was = baseline.values.readiness[String(row.area || "").trim().toLowerCase()];
+  if(!was || was === row.rag) return "";
+  const rank = {r:0, a:1, g:2};
+  const improved = (rank[row.rag] ?? 0) > (rank[was] ?? 0);
+  return `<span class="delta ${improved ? "up" : "down"}" title="Was ${RAG_LABEL[was]} at ${esc(baseline.label)}">`
+       + `${improved ? "▲" : "▼"} from ${RAG_LABEL[was]}</span>`;
+}
+
 function renderDashboard(){
   const p = state;
   const m = p.metrics;
   const today = new Date(); today.setHours(0,0,0,0);
+  const prev = baseline ? baseline.values : null;
 
   // "Defects open" is pulled live from the Open Defects section below rather
   // than typed in separately — the two numbers drifting apart (KPI tile vs.
@@ -2072,48 +2165,56 @@ function renderDashboard(){
 
   const sectionHTML = {
     kpis: () => `
+    ${baseline ? `<p class="baseline-note">▲▼ shows movement since <strong>${esc(baseline.label)}</strong> (${esc(formatTimestamp(baseline.timestamp))}). Save a weekly version to move the comparison point.</p>` : ""}
     <div class="kpi-grid">
       ${p.metricMeta.uat.removed ? "" : `
       <div class="kpi-card ${uatExecPct>=70?'good':uatExecPct>=30?'warn':'crit'}">
         <div class="num">${uatExecPct}%</div>
         <div class="lbl">${esc(p.metricMeta.uat.label)}</div>
         <div class="sub">${uatExecuted} of ${m.uatTotal} cases (${m.uatFailed} failed)</div>
+        ${deltaTag(uatExecPct, prev && prev.uatExecPct, {suffix:"%", goodDirection:"up"})}
       </div>`}
       ${p.metricMeta.defOpen.removed ? "" : `
       <div class="kpi-card ${defOpenP1Count>0?'crit':'good'}">
         <div class="num">${defOpenCount}</div>
         <div class="lbl">${esc(p.metricMeta.defOpen.label)}</div>
         <div class="sub">${defOpenP1Count} P1 (financial-integrity)</div>
+        ${deltaTag(defOpenCount, prev && prev.defOpen, {goodDirection:"down", epsilon:0.5})}
       </div>`}
       ${p.metricMeta.defClosed.removed ? "" : `
       <div class="kpi-card ${defClosedPct>=70?'good':defClosedPct>=40?'warn':'crit'}">
         <div class="num">${defClosedPct}%</div>
         <div class="lbl">${esc(p.metricMeta.defClosed.label)}</div>
         <div class="sub">${m.defClosed} of ${m.defTotal} logged</div>
+        ${deltaTag(defClosedPct, prev && prev.defClosedPct, {suffix:"%", goodDirection:"up"})}
       </div>`}
       ${p.metricMeta.cutover.removed ? "" : `
       <div class="kpi-card ${cutoverPct>0?'warn':'crit'}">
         <div class="num">${m.cutStarted}/${m.cutTotal}</div>
         <div class="lbl">${esc(p.metricMeta.cutover.label)}</div>
         <div class="sub">Plan needs a new baseline</div>
+        ${deltaTag(cutoverPct, prev && prev.cutoverPct, {suffix:"%", goodDirection:"up"})}
       </div>`}
       ${p.metricMeta.msOpp.removed ? "" : `
       <div class="kpi-card ${msOppPct>=70?'good':msOppPct>=40?'warn':'crit'}">
         <div class="num">${msOppPct.toFixed(2)}%</div>
         <div class="lbl">${esc(p.metricMeta.msOpp.label)}</div>
         <div class="sub">${m.msOppPassed} of ${m.msOppTotal} test cases passed</div>
+        ${deltaTag(msOppPct, prev && prev.msOppPct, {suffix:"%", goodDirection:"up", decimals:2})}
       </div>`}
       ${p.metricMeta.prodOpp.removed ? "" : `
       <div class="kpi-card ${prodOppPct>=70?'good':prodOppPct>=40?'warn':'crit'}">
         <div class="num">${prodOppPct.toFixed(2)}%</div>
         <div class="lbl">${esc(p.metricMeta.prodOpp.label)}</div>
         <div class="sub">${m.prodOppPassed} of ${m.prodOppTotal} test cases passed</div>
+        ${deltaTag(prodOppPct, prev && prev.prodOppPct, {suffix:"%", goodDirection:"up", decimals:2})}
       </div>`}
       ${p.metricMeta.psOpp.removed ? "" : `
       <div class="kpi-card ${psOppPct>=70?'good':psOppPct>=40?'warn':'crit'}">
         <div class="num">${psOppPct.toFixed(2)}%</div>
         <div class="lbl">${esc(p.metricMeta.psOpp.label)}</div>
         <div class="sub">${m.psOppPassed} of ${m.psOppTotal} test cases passed</div>
+        ${deltaTag(psOppPct, prev && prev.psOppPct, {suffix:"%", goodDirection:"up", decimals:2})}
       </div>`}
       <div class="kpi-card ${daysToGoLive!==null && daysToGoLive<14?'crit':daysToGoLive!==null && daysToGoLive<30?'warn':''}">
         <div class="num">${daysToGoLive!==null ? daysToGoLive : "—"}</div>
@@ -2144,7 +2245,7 @@ function renderDashboard(){
           ${readinessFiltered.length ? readinessFiltered.map(r=>`
             <tr>
               <td><strong>${esc(r.area)}</strong></td>
-              <td><span class="pill ${r.rag}"><span class="dot"></span>${RAG_LABEL[r.rag]}</span></td>
+              <td><span class="pill ${r.rag}"><span class="dot"></span>${RAG_LABEL[r.rag]}</span>${ragMoveTag(r)}</td>
               <td>${esc(r.evidence)}</td>
               <td>${esc(r.mustClear)}</td>
               <td>${esc(r.owner)}</td>
@@ -2722,6 +2823,7 @@ async function startSession(session){
   revealApp();
 
   await fetchHistory();
+  await fetchBaseline();
   await refreshOwnerFlag();
   await fetchDashboardList();
   await fetchAccess();
