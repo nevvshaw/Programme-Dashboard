@@ -2327,16 +2327,16 @@ function renderDashboard(){
         <div class="lbl">${esc(p.metricMeta.psOpp.label)}</div>
         <div class="sub">${m.psOppPassed} of ${m.psOppTotal} test cases passed</div>
       </div>`}
-      <div class="kpi-card ${daysToGoLive!==null && daysToGoLive<14?'crit':daysToGoLive!==null && daysToGoLive<30?'warn':''}">
-        <div class="num">${daysToGoLive!==null ? daysToGoLive : "—"}</div>
-        <div class="lbl">Days to go-live</div>
-        <div class="sub">Behind two hard gates</div>
-      </div>
       ${p.customMetrics.map(cm=>`
       <div class="kpi-card">
         <div class="num">${esc(cm.value)}</div>
         <div class="lbl">${esc(cm.label)}</div>
       </div>`).join("")}
+      <div class="kpi-card ${daysToGoLive!==null && daysToGoLive<14?'crit':daysToGoLive!==null && daysToGoLive<30?'warn':''}">
+        <div class="num">${daysToGoLive!==null ? daysToGoLive : "—"}</div>
+        <div class="lbl">Days to go-live</div>
+        <div class="sub">Behind two hard gates</div>
+      </div>
     </div>`,
 
     readiness: () => `
