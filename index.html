@@ -1689,6 +1689,9 @@ function renderCustomMetricRows(){
         <div><label>Value</label>
           <input type="number" data-field="value" data-type="customMetric" data-i="${i}" value="${cm.value}">
         </div>
+        <div><label>Note (optional)</label>
+          <input type="text" data-field="note" data-type="customMetric" data-i="${i}" value="${esc(cm.note||"")}" placeholder="e.g. 2 of 2 passed">
+        </div>
       </div>
     </div>`).join("") || `<p class="hint">No additional metrics yet.</p>`;
 }
@@ -2331,6 +2334,7 @@ function renderDashboard(){
       <div class="kpi-card">
         <div class="num">${esc(cm.value)}</div>
         <div class="lbl">${esc(cm.label)}</div>
+        ${cm.note ? `<div class="sub">${esc(cm.note)}</div>` : ""}
       </div>`).join("")}
       <div class="kpi-card ${daysToGoLive!==null && daysToGoLive<14?'crit':daysToGoLive!==null && daysToGoLive<30?'warn':''}">
         <div class="num">${daysToGoLive!==null ? daysToGoLive : "—"}</div>
@@ -2843,7 +2847,7 @@ panel.addEventListener("click", e=>{
     if(type==="decision") arr.push({title:"", detail:"", status:"Pending"});
     if(type==="ganttTrack") arr.push({name:"New track", start:1, end:1});
     if(type==="ganttGate") arr.push({label:"New gate", date: state.ganttStartDate});
-    if(type==="customMetric") arr.push({label:"New metric", value:0});
+    if(type==="customMetric") arr.push({label:"New metric", value:0, note:""});
     if(type==="criticalPath") arr.push({title:"New critical path item", points:["First point"], clear:""});
     if(type==="assumption") arr.push({ref:nextRef("assumptions"), text:"New assumption"});
     if(type==="dependency") arr.push({ref:nextRef("dependencies"), text:"New dependency"});
