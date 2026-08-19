@@ -2671,18 +2671,27 @@ document.getElementById("f-ganttWeeks").addEventListener("input", e=>{
 document.getElementById("btnPrint").addEventListener("click", ()=>window.print());
 
 /* Per-section "Print section" buttons (data-print-card, added to each custom
-   section's card-head). Hides every other card for the duration of the print/PDF
-   dialog only — this is local DOM display toggling, not a `state` change, so it
-   never gets saved to Supabase and can't affect what other viewers see. */
+   section's card-head). Hides every other top-level block in #dash for the
+   duration of the print/PDF dialog only — this is local DOM display toggling,
+   not a `state` change, so it never gets saved to Supabase and can't affect
+   what other viewers see.
+   Deliberately walks up to a direct child of #dash rather than assuming
+   ".card": the KPI tiles render as a plain .kpi-grid (no .card wrapper), so an
+   earlier version of this that only hid ".card" elements left the metric tiles
+   printing alongside the isolated section. Branding/header/footer blocks are
+   exempt so they still appear on the single-section export, same as a full print. */
 document.getElementById("dash").addEventListener("click", e=>{
   const btn = e.target.closest("[data-print-card]");
   if(!btn) return;
-  const targetCard = btn.closest(".card");
-  if(!targetCard) return;
-  const otherCards = Array.from(document.querySelectorAll("#dash .card")).filter(c => c !== targetCard);
-  otherCards.forEach(c => c.style.display = "none");
+  const dashEl = document.getElementById("dash");
+  let targetBlock = btn;
+  while(targetBlock && targetBlock.parentElement !== dashEl) targetBlock = targetBlock.parentElement;
+  if(!targetBlock) return;
+  const keepAlways = new Set(["print-logos", "dash-head", "footer-strip"]);
+  const others = Array.from(dashEl.children).filter(c => c !== targetBlock && !keepAlways.has(c.className));
+  others.forEach(c => c.style.display = "none");
   const restore = () => {
-    otherCards.forEach(c => c.style.display = "");
+    others.forEach(c => c.style.display = "");
     window.removeEventListener("afterprint", restore);
   };
   window.addEventListener("afterprint", restore);
