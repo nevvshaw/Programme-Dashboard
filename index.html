@@ -537,6 +537,10 @@
      step. A standalone "Share as HTML" export never uses it (see STANDALONE below), so
      this failing to load offline degrades to read-only rather than breaking the page. -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.58.0/dist/umd/supabase.js"></script>
+<!-- Week-on-week trend chart only. Same offline story as Supabase above: if this
+     fails to load (no network), the trend chart's canvas is simply left empty —
+     nothing else on the page depends on it. -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 
 <script id="appScript">
 /* ==================== Supabase configuration ==================== */
@@ -1007,6 +1011,7 @@ async function handleConflict(){
     setSaveStatus("saved");
     await fetchHistory();
     await fetchBaseline();
+    await fetchTrendSeries();
     withoutSave(renderDashboard);
   }catch(err){
     console.error("Could not resolve the conflict:", err);
@@ -1394,6 +1399,40 @@ async function fetchBaseline(){
   }
 }
 
+/* ---- Week-on-week trend chart ----
+   Unlike fetchBaseline() (one snapshot), the chart needs a short run of history —
+   still capped, and still only the derived kpiValues() rather than whole documents,
+   for the same reason described above. Auto-backups (safety copies made right
+   before a restore) are excluded: they're not a deliberate weekly checkpoint and
+   would otherwise show up as a duplicate, near-identical point next to the save
+   that triggered them. */
+let trendSeries = [];
+let trendChartInstance = null;   // destroyed and rebuilt on every render — see the
+                                  // Chart.js wiring near the other post-innerHTML hookups.
+
+async function fetchTrendSeries(){
+  trendSeries = [];
+  if(STANDALONE || !sb || !dashboardId) return;
+  try{
+    const { data, error } = await sb.from("dashboard_versions")
+      .select("id, label, created_at, data")
+      .eq("dashboard_id", dashboardId)
+      .not("label", "ilike", "%Auto-backup%")
+      .order("created_at", { ascending:true })
+      .limit(12);
+    if(error) throw error;
+    trendSeries = (data || [])
+      .map(row => {
+        const values = kpiValues(row.data);
+        return values ? { label: row.label, timestamp: row.created_at, values } : null;
+      })
+      .filter(Boolean);
+  }catch(err){
+    console.error("Could not load the trend history:", err);
+    trendSeries = [];
+  }
+}
+
 /* Deliberately does NOT select the `data` column. Every snapshot is a full copy of the
    whole dashboard document (tens to hundreds of KB); pulling all of them just to render
    a list of labels would move megabytes on each refresh. The document is fetched lazily,
@@ -1431,6 +1470,7 @@ async function addVersionSnapshot(label){
     if(error) throw error;
     await fetchHistory();
     await fetchBaseline();
+    await fetchTrendSeries();
     withoutSave(renderDashboard);
   }catch(err){
     console.error("Could not save version:", err);
@@ -1466,6 +1506,7 @@ async function deleteVersion(id){
     if(error) throw error;
     await fetchHistory();
     await fetchBaseline();
+    await fetchTrendSeries();
     withoutSave(renderDashboard);
   }catch(err){
     console.error("Could not delete version:", err);
@@ -2297,6 +2338,13 @@ function renderDashboard(){
             ? `<ul class="ref-list">${moved.map(x=>`<li><span>${esc(x.row.area)}</span>${x.tag}</li>`).join("")}</ul>`
             : `<div class="empty-note" style="padding:2px 0;">No readiness area changed status this week.</div>`}
         </div>
+        ${(!STANDALONE && trendSeries.length >= 1) ? `
+        <div style="margin-top:18px;">
+          <div class="lbl" style="font-size:10.5px; text-transform:uppercase; letter-spacing:.4px; color:var(--muted); font-weight:700; margin-bottom:6px;">
+            Progress over time — ${trendSeries.length + 1} saved checkpoint${trendSeries.length ? "s" : ""} since ${esc(formatTimestamp(trendSeries[0].timestamp))}
+          </div>
+          <div style="position:relative; height:280px;"><canvas id="trendChart"></canvas></div>
+        </div>` : ""}
       </div>`;
     },
 
@@ -2630,6 +2678,40 @@ function renderDashboard(){
     await fetchBaseline();
     renderDashboard();   // re-render picks up the new baseline and schedules a save
   });
+  // Progress-over-time chart. Rebuilt on every render since dash.innerHTML just
+  // replaced the <canvas> — Chart.js instances don't survive that, hence the
+  // destroy-then-recreate rather than an in-place update. "Now" is appended live
+  // from the current state rather than stored, so the last point is always current
+  // even between saved weekly checkpoints.
+  const trendCanvas = document.getElementById("trendChart");
+  if(trendChartInstance){ trendChartInstance.destroy(); trendChartInstance = null; }
+  if(trendCanvas && window.Chart){
+    const points = trendSeries.concat([{ label:"Now", timestamp:new Date().toISOString(), values:kpiValues(state) }]);
+    const line = (key, label, color) => ({
+      label, data: points.map(pt => Math.round(pt.values[key] * 10) / 10),
+      borderColor: color, backgroundColor: color, tension:.25, pointRadius:3, pointHoverRadius:5
+    });
+    trendChartInstance = new Chart(trendCanvas.getContext("2d"), {
+      type: "line",
+      data: {
+        labels: points.map(pt => fmtDate(new Date(pt.timestamp))),
+        datasets: [
+          line("uatExecPct",   p.metricMeta.uat.label,      "#272B5D"),
+          line("defClosedPct", p.metricMeta.defClosed.label,"#2E9E5B"),
+          line("cutoverPct",   p.metricMeta.cutover.label,  "#C73E3E"),
+          line("msOppPct",     p.metricMeta.msOpp.label,    "#C7861A"),
+          line("prodOppPct",   p.metricMeta.prodOpp.label,  "#36A8E1"),
+          line("psOppPct",     p.metricMeta.psOpp.label,    "#6D5DBE")
+        ]
+      },
+      options: {
+        responsive:true, maintainAspectRatio:false,
+        interaction: { mode:"index", intersect:false },
+        scales: { y: { min:0, max:100, ticks:{ callback: v => v + "%" } } },
+        plugins: { legend: { position:"bottom", labels:{ boxWidth:10, font:{ size:10 } } } }
+      }
+    });
+  }
   // Bound here rather than delegated, because dash.innerHTML replaces this element on
   // every render. Keyboard support included since the head is a div, not a button.
   const historyToggle = document.getElementById("versionHistoryToggle");
@@ -3018,6 +3100,7 @@ async function startSession(session){
 
   await fetchHistory();
   await fetchBaseline();
+  await fetchTrendSeries();
   await refreshOwnerFlag();
   await fetchDashboardList();
   await fetchAccess();
