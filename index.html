@@ -1962,7 +1962,11 @@ function renderCustomSectionRows(){
     if(sec.type === "list"){
       return `
         <div class="section-card">
-          <button class="remove-section" data-remove-section="${si}">Remove section</button>
+          <div style="position:absolute; top:7px; right:7px; display:flex; align-items:center; gap:8px;">
+            <button class="btn-mini" data-move-section-up="${si}" ${si===0 ? "disabled" : ""}>▲</button>
+            <button class="btn-mini" data-move-section-down="${si}" ${si===state.customSections.length-1 ? "disabled" : ""}>▼</button>
+            <button class="remove-section" style="position:static;" data-remove-section="${si}">Remove section</button>
+          </div>
           <span class="type-tag">List section</span>
           <label>Section title</label>
           <input type="text" data-sec="${si}" data-secfield="title" value="${esc(sec.title)}">
@@ -1973,7 +1977,11 @@ function renderCustomSectionRows(){
     // table type
     return `
       <div class="section-card">
-        <button class="remove-section" data-remove-section="${si}">Remove section</button>
+        <div style="position:absolute; top:7px; right:7px; display:flex; align-items:center; gap:8px;">
+          <button class="btn-mini" data-move-section-up="${si}" ${si===0 ? "disabled" : ""}>▲</button>
+          <button class="btn-mini" data-move-section-down="${si}" ${si===state.customSections.length-1 ? "disabled" : ""}>▼</button>
+          <button class="remove-section" style="position:static;" data-remove-section="${si}">Remove section</button>
+        </div>
         <span class="type-tag">Table section</span>
         <label>Section title</label>
         <input type="text" data-sec="${si}" data-secfield="title" value="${esc(sec.title)}">
@@ -2782,6 +2790,31 @@ panel.addEventListener("click", e=>{
     const idx = parseInt(subDownBtn.dataset.subrow);
     if(sec && Array.isArray(sec.rows) && idx < sec.rows.length-1){
       [sec.rows[idx+1], sec.rows[idx]] = [sec.rows[idx], sec.rows[idx+1]];
+      renderForm(); renderDashboard();
+    }
+    return;
+  }
+
+  // Whole custom sections (e.g. "Immediate priorities post go-live") relative to
+  // each other — distinct from data-move-subrow-* above, which reorders rows
+  // inside a single section.
+  const moveSectionUpBtn = e.target.closest("[data-move-section-up]");
+  if(moveSectionUpBtn){
+    const idx = parseInt(moveSectionUpBtn.dataset.moveSectionUp);
+    const arr = state.customSections;
+    if(idx > 0){
+      [arr[idx-1], arr[idx]] = [arr[idx], arr[idx-1]];
+      renderForm(); renderDashboard();
+    }
+    return;
+  }
+
+  const moveSectionDownBtn = e.target.closest("[data-move-section-down]");
+  if(moveSectionDownBtn){
+    const idx = parseInt(moveSectionDownBtn.dataset.moveSectionDown);
+    const arr = state.customSections;
+    if(idx < arr.length-1){
+      [arr[idx+1], arr[idx]] = [arr[idx], arr[idx+1]];
       renderForm(); renderDashboard();
     }
     return;
