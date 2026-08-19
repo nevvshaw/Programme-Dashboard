@@ -2626,7 +2626,7 @@ function renderDashboard(){
         <h2>${esc(p.header.programme)}</h2>
         <p>${esc(p.header.period)} · Target go-live: ${goLive ? fmtDate(goLive) : "—"}</p>
       </div>
-      <span class="rag-badge ${overallRag}"><span class="dot"></span>Overall readiness: ${RAG_LABEL[overallRag]}</span>
+      <span class="rag-badge ${overallRag}" data-overall-rag-badge><span class="dot"></span>Overall readiness: ${RAG_LABEL[overallRag]}</span>
     </div>
 
     ${orderedSections}
@@ -2772,8 +2772,16 @@ document.getElementById("dash").addEventListener("click", e=>{
   const keepAlways = new Set(["print-logos", "dash-head", "footer-strip"]);
   const others = Array.from(dashEl.children).filter(c => c !== targetBlock && !keepAlways.has(c.className));
   others.forEach(c => c.style.display = "none");
+  // The overall RAG badge lives inside .dash-head, which is kept for the programme
+  // name/period context — but the badge itself is a programme-wide status, not
+  // this section, so it's hidden separately rather than blanket-hiding all of
+  // .dash-head. Scoped to this click handler (not a `.no-print` CSS rule) so a
+  // full "Print / Save PDF" of the whole dashboard still shows it as normal.
+  const ragBadge = document.querySelector("[data-overall-rag-badge]");
+  if(ragBadge) ragBadge.style.display = "none";
   const restore = () => {
     others.forEach(c => c.style.display = "");
+    if(ragBadge) ragBadge.style.display = "";
     window.removeEventListener("afterprint", restore);
   };
   window.addEventListener("afterprint", restore);
