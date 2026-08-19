@@ -1593,6 +1593,84 @@ function setVersionHistoryCollapsed(collapsed){
   try{ localStorage.setItem(HISTORY_STATE_KEY, collapsed ? "1" : "0"); }catch(err){}
 }
 
+/* ---- Collapse for every other rendered section ----
+   Same reasoning as version history above: a per-browser view preference, not
+   `state`, so folding a section away is local and never syncs to Supabase or
+   affects other viewers.
+   Rather than touch each of the ~15 section-render functions individually (kpis,
+   gantt, readiness, risks, every custom section card, ...), this walks the
+   freshly-rendered #dash once per render and retrofits every top-level card with
+   the collapsible-head/collapsible-body classes the CSS already defines for
+   Version history. Keyed by each card's own <h3> text — sections have no other
+   stable id — so renaming a section resets its collapse state, which is an
+   acceptable trade-off against needing a new id field on every section shape. */
+const SECTION_COLLAPSE_KEY = "golive-dashboard-section-collapsed";
+let collapsedSections = new Set();
+try{
+  const savedCollapsed = JSON.parse(localStorage.getItem(SECTION_COLLAPSE_KEY) || "[]");
+  if(Array.isArray(savedCollapsed)) collapsedSections = new Set(savedCollapsed);
+}catch(err){}
+
+function isSectionCollapsed(key){ return collapsedSections.has(key); }
+function toggleSectionCollapsed(key){
+  if(collapsedSections.has(key)) collapsedSections.delete(key); else collapsedSections.add(key);
+  try{ localStorage.setItem(SECTION_COLLAPSE_KEY, JSON.stringify(Array.from(collapsedSections))); }catch(err){}
+}
+
+function makeSectionsCollapsible(dashEl){
+  // #versionHistoryCard already has its own dedicated collapse mechanism above;
+  // print-logos/dash-head/footer-strip are page chrome, not content sections.
+  const skipClass = new Set(["print-logos", "dash-head", "footer-strip"]);
+  Array.from(dashEl.children).forEach(block=>{
+    if(block.id === "versionHistoryCard" || skipClass.has(block.className)) return;
+
+    // .kpi-grid (the metric tiles) has no card/card-head of its own — give it a
+    // synthetic one so it collapses the same way as everything else.
+    if(block.classList.contains("kpi-grid")){
+      const key = "kpis";
+      const collapsed = isSectionCollapsed(key);
+      const wrapper = document.createElement("div");
+      wrapper.className = "card" + (collapsed ? " collapsed" : "");
+      const head = document.createElement("div");
+      head.className = "card-head collapsible-head";
+      head.setAttribute("role","button"); head.setAttribute("tabindex","0");
+      head.setAttribute("aria-expanded", collapsed ? "false" : "true");
+      head.dataset.collapseKey = key;
+      head.innerHTML = `<h3><span class="chevron">▸</span>Core metrics tiles</h3>`;
+      const body = document.createElement("div");
+      body.className = "collapsible-body";
+      block.parentNode.insertBefore(wrapper, block);
+      body.appendChild(block);
+      wrapper.appendChild(head);
+      wrapper.appendChild(body);
+      return;
+    }
+
+    if(!block.classList.contains("card")) return;
+    const head = block.querySelector(":scope > .card-head");
+    const h3 = head && head.querySelector("h3");
+    if(!head || !h3) return;
+    const key = h3.textContent.trim() || "section";
+    const collapsed = isSectionCollapsed(key);
+    head.classList.add("collapsible-head");
+    head.setAttribute("role","button"); head.setAttribute("tabindex","0");
+    head.setAttribute("aria-expanded", collapsed ? "false" : "true");
+    head.dataset.collapseKey = key;
+    h3.insertAdjacentHTML("afterbegin", `<span class="chevron">▸</span>`);
+    block.classList.toggle("collapsed", collapsed);
+    // Move every sibling after .card-head into one .collapsible-body wrapper.
+    const body = document.createElement("div");
+    body.className = "collapsible-body";
+    let sib = head.nextSibling;
+    while(sib){
+      const next = sib.nextSibling;
+      body.appendChild(sib);
+      sib = next;
+    }
+    block.appendChild(body);
+  });
+}
+
 function esc(str){ return String(str ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
 function daysBetween(a,b){ return Math.round((b-a)/86400000); }
 
@@ -2673,6 +2751,11 @@ function renderDashboard(){
     </div>
   `;
 
+  // Retrofits collapse behaviour onto every section that just got (re)rendered
+  // above — see makeSectionsCollapsible for why this runs as a DOM pass rather
+  // than being built into each section's own template.
+  makeSectionsCollapsible(dash);
+
   // These live inside the readiness and risks cards, so they are absent whenever those
   // sections are switched off for this customer. Bind only if they rendered.
   const filterReadiness = document.getElementById("filterReadiness");
@@ -2795,6 +2878,28 @@ document.getElementById("dash").addEventListener("click", e=>{
   };
   window.addEventListener("afterprint", restore);
   window.print();
+});
+
+/* Collapse toggle for every section (see makeSectionsCollapsible). Delegated
+   rather than bound per-head, same reasoning as the print-card handler above:
+   dash.innerHTML replaces every head element on each render. The interactive-
+   control guard stops a click on the "Print section" button, a filter <select>,
+   or the week-on-week baseline picker — all of which live inside a card-head —
+   from also toggling that section closed. */
+document.getElementById("dash").addEventListener("click", e=>{
+  if(e.target.closest("button, a, select, input, label")) return;
+  const head = e.target.closest("[data-collapse-key]");
+  if(!head) return;
+  toggleSectionCollapsed(head.dataset.collapseKey);
+  renderDashboard();
+});
+document.getElementById("dash").addEventListener("keydown", e=>{
+  if(e.key !== "Enter" && e.key !== " ") return;
+  const head = e.target.closest("[data-collapse-key]");
+  if(!head) return;
+  e.preventDefault();
+  toggleSectionCollapsed(head.dataset.collapseKey);
+  renderDashboard();
 });
 
 const panel = document.getElementById("formPanel");
