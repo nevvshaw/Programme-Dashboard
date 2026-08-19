@@ -1984,8 +1984,11 @@ function renderCustomSectionRows(){
               <button class="btn-mini" data-move-subrow-down="${si}" data-subrow="${ri}" ${ri===sec.rows.length-1 ? "disabled" : ""}>▼</button>
               <button class="remove-subrow" style="position:static;" data-sec="${si}" data-subrow="${ri}">Remove row</button>
             </div>
-            <label>${sec.numbered ? `Item ${ri+1}` : "Item"}</label>
+            <label>${sec.priorityLayout ? "Description" : sec.numbered ? `Item ${ri+1}` : "Item"}</label>
             <input type="text" data-sec="${si}" data-subrow="${ri}" data-subfield="item" value="${esc(row.item)}">
+            ${sec.priorityLayout ? `
+            <label>Impact</label>
+            <input type="text" data-sec="${si}" data-subrow="${ri}" data-subfield="impact" value="${esc(row.impact||"")}">` : ""}
             <div class="row-grid">
               <div><label>RAG Status</label>
                 <select data-sec="${si}" data-subrow="${ri}" data-subfield="status">
@@ -2001,14 +2004,14 @@ function renderCustomSectionRows(){
               </div>
             </div>
             <div class="row-grid">
-              <div><label>Due date</label>
+              <div><label>${sec.priorityLayout ? "Date needs to be completed" : "Due date"}</label>
                 <input type="date" data-sec="${si}" data-subrow="${ri}" data-subfield="due" value="${esc(row.due||"")}">
               </div>
               <div><label>Owner</label>
                 <input type="text" data-sec="${si}" data-subrow="${ri}" data-subfield="owner" value="${esc(row.owner)}">
               </div>
             </div>
-            <label>Detail</label>
+            <label>${sec.priorityLayout ? "Comments" : "Detail"}</label>
             <input type="text" data-sec="${si}" data-subrow="${ri}" data-subfield="detail" value="${esc(row.detail)}">
           </div>`).join("")}
         <button class="add-subrow" data-addrow-sec="${si}">+ Add row</button>
@@ -2521,17 +2524,18 @@ function renderDashboard(){
             ${sec.items.length ? `<ul class="bullets">${sec.items.map(it=>`<li>${esc(it)}</li>`).join("")}</ul>` : `<div class="empty-note">No items yet.</div>`}
           </div>`;
       }
-      const numCols = sec.numbered ? 7 : 6;
+      const numCols = (sec.numbered ? 1 : 0) + (sec.priorityLayout ? 7 : 6);
       return `
         <div class="card">
           <div class="card-head"><h3>${esc(sec.title) || "Untitled section"}</h3></div>
           <table>
-            <thead><tr>${sec.numbered ? `<th style="width:40px;">#</th>` : ""}<th>Item</th><th>RAG Status</th><th>Status</th><th style="width:92px;">Due</th><th>Detail</th><th>Owner</th></tr></thead>
+            <thead><tr>${sec.numbered ? `<th style="width:40px;">#</th>` : ""}<th>${sec.priorityLayout ? "Description" : "Item"}</th>${sec.priorityLayout ? `<th>Impact</th>` : ""}<th>RAG Status</th><th>Status</th><th style="width:92px;">${sec.priorityLayout ? "Date needs to be completed" : "Due"}</th><th>${sec.priorityLayout ? "Comments" : "Detail"}</th><th>Owner</th></tr></thead>
             <tbody>
               ${sec.rows.length ? sec.rows.map((r,i)=>`
                 <tr>
                   ${sec.numbered ? `<td>${i+1}</td>` : ""}
                   <td><strong>${esc(r.item)}</strong></td>
+                  ${sec.priorityLayout ? `<td>${esc(r.impact||"")}</td>` : ""}
                   <td><span class="pill ${r.status}"><span class="dot"></span>${RAG_LABEL[r.status]}</span></td>
                   <td><span class="status-pill ${r.progress||'notstarted'}">${PROGRESS_OPTS.find(o=>o[0]===(r.progress||'notstarted'))?.[1]}</span></td>
                   <td>${dueCell(r, today)}</td>
@@ -2860,7 +2864,7 @@ panel.addEventListener("click", e=>{
   if(addRowBtn){
     const sec = state.customSections[parseInt(addRowBtn.dataset.addrowSec)];
     if(sec && sec.type === "table"){
-      sec.rows.push({item:"", detail:"", status:"a", progress:"notstarted", owner:"", due:""});
+      sec.rows.push({item:"", detail:"", status:"a", progress:"notstarted", owner:"", due:"", impact:""});
       renderForm(); renderDashboard();
     }
     return;
