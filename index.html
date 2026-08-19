@@ -783,7 +783,7 @@ function getDefaultState(){ return normaliseRefs({
     ]}
   ],
 
-  sectionOrder:["gantt","kpis","trend","readiness","recoveryActions","risks","customSections","issues","defects","assumptions","dependencies","systemsInScope","decisions","criticalPath"],
+  sectionOrder:["gantt","kpis","trend","progressChart","readiness","recoveryActions","risks","customSections","issues","defects","assumptions","dependencies","systemsInScope","decisions","criticalPath"],
 
   filters:{readiness:"all", risk:"all"},
 
@@ -1643,7 +1643,8 @@ const SECTION_LABELS = {
   systemsInScope:"Systems in scope — discovery",
   decisions:"Decisions needed this week",
   customSections:"Custom sections",
-  trend:"Week-on-week movement"
+  trend:"Week-on-week movement",
+  progressChart:"Progress over time chart"
 };
 
 /* Which sections this customer actually shows. Stored as a list of hidden ids rather
@@ -2338,13 +2339,21 @@ function renderDashboard(){
             ? `<ul class="ref-list">${moved.map(x=>`<li><span>${esc(x.row.area)}</span>${x.tag}</li>`).join("")}</ul>`
             : `<div class="empty-note" style="padding:2px 0;">No readiness area changed status this week.</div>`}
         </div>
-        ${(!STANDALONE && trendSeries.length >= 1) ? `
-        <div style="margin-top:18px;">
-          <div class="lbl" style="font-size:10.5px; text-transform:uppercase; letter-spacing:.4px; color:var(--muted); font-weight:700; margin-bottom:6px;">
-            Progress over time — ${trendSeries.length + 1} saved checkpoint${trendSeries.length ? "s" : ""} since ${esc(formatTimestamp(trendSeries[0].timestamp))}
-          </div>
-          <div style="position:relative; height:280px;"><canvas id="trendChart"></canvas></div>
-        </div>` : ""}
+      </div>`;
+    },
+
+    // A separate section (rather than nested inside trend/kpis above) specifically so
+    // it has its own entry in the Section order panel and can be moved or hidden
+    // independently — see SECTION_LABELS.progressChart.
+    progressChart: () => {
+      if(STANDALONE || trendSeries.length < 1) return "";
+      return `
+      <div class="card">
+        <div class="card-head">
+          <h3>Progress over time</h3>
+        </div>
+        <p class="baseline-note" style="margin-top:-4px;">${trendSeries.length + 1} saved checkpoint${trendSeries.length ? "s" : ""} since ${esc(formatTimestamp(trendSeries[0].timestamp))}</p>
+        <div style="position:relative; height:280px;"><canvas id="trendChart"></canvas></div>
       </div>`;
     },
 
