@@ -2267,6 +2267,8 @@ function renderWorkstreamRows(){
           </select>
         </div>
       </div>
+      <label>Completion date</label>
+      <input type="date" data-field="completionDate" data-type="workstream" data-i="${i}" value="${esc(w.completionDate||"")}">
       <label>Next milestone</label>
       <input type="text" data-field="milestone" data-type="workstream" data-i="${i}" value="${esc(w.milestone||"")}">
       <label>Commentary</label>
@@ -2842,8 +2844,10 @@ function ragMoveTag(row){
 
 /* Due date for a custom-table row. A date that has passed is only overdue while the
    row is still open — a completed action that ran late is history, not an action. */
-function dueCell(row, today){
-  const raw = row && row.due;
+/* `field` lets this serve any date column — custom rows use `due`, workstreams
+   use `completionDate` — so the overdue and due-soon styling stays in one place. */
+function dueCell(row, today, field){
+  const raw = row && row[field || "due"];
   if(!raw) return `<span style="color:var(--muted);">—</span>`;
   const due = new Date(raw + "T00:00:00");
   if(isNaN(due.getTime())) return `<span style="color:var(--muted);">—</span>`;
@@ -3106,7 +3110,7 @@ function renderDashboard(){
         ${p.workstreams.length ? `<span class="rag-badge ${p.workstreams.some(w=>w.rag==="r")?"r":p.workstreams.some(w=>w.rag==="a")?"a":"g"}"><span class="dot"></span>${p.workstreams.filter(w=>(w.progress||"notstarted")==="completed").length} of ${p.workstreams.length} complete</span>` : ""}
       </div>
       <table>
-        <thead><tr><th style="width:44px;">Ref</th><th>Workstream</th><th>Lead</th><th>RAG</th><th>Status</th><th style="width:110px;">Progress</th><th>Next milestone</th><th>Commentary</th></tr></thead>
+        <thead><tr><th style="width:44px;">Ref</th><th>Workstream</th><th>Lead</th><th>RAG</th><th>Status</th><th style="width:110px;">Progress</th><th>Completion date</th><th>Next milestone</th><th>Commentary</th></tr></thead>
         <tbody>
           ${p.workstreams.length ? p.workstreams.map((w,i)=>{
             const pcNum = Math.max(0, Math.min(100, Number(w.percent)||0));
@@ -3124,10 +3128,11 @@ function renderDashboard(){
                   </div>
                   <span style="font-size:11px; font-weight:700; color:var(--muted);">${pcNum}%</span>
                 </div>`, dInput("workstream", i, "percent", pcNum, "number"))}</td>
+              <td>${de(dueCell(w, today, "completionDate"), dInput("workstream", i, "completionDate", w.completionDate||"", "date"))}</td>
               <td>${de(esc(w.milestone||""), dInput("workstream", i, "milestone", w.milestone||""))}</td>
               <td>${de(esc(w.commentary||""), dArea("workstream", i, "commentary", w.commentary||""))}</td>
             </tr>`;
-          }).join("") : `<tr><td colspan="8" class="empty-note">No workstreams yet. Add them in the edit panel.</td></tr>`}
+          }).join("") : `<tr><td colspan="9" class="empty-note">No workstreams yet. Add them in the edit panel.</td></tr>`}
         </tbody>
       </table>
     </div>`,
@@ -3708,7 +3713,7 @@ panel.addEventListener("click", e=>{
     const arr = state[ARR_MAP[type]];
     if(type==="readiness") arr.push({area:"New area", rag:"a", evidence:"", mustClear:"", owner:""});
     if(type==="action") arr.push({seq:arr.length+1, title:"New action", desc:"", status:"notstarted", rag:"g"});
-    if(type==="workstream") arr.push({ref:nextRef("workstreams"), name:"", lead:"", rag:"a", progress:"notstarted", percent:0, milestone:"", commentary:""});
+    if(type==="workstream") arr.push({ref:nextRef("workstreams"), name:"", lead:"", rag:"a", progress:"notstarted", percent:0, completionDate:"", milestone:"", commentary:""});
     if(type==="stakeholder") arr.push({ref:nextRef("stakeholders"), name:"", role:"", org:"", influence:"Medium", engagement:"a", contact:"", notes:""});
     if(type==="risk") arr.push({ref:nextRef("risks"), risk:"", impact:"Medium", mitigation:""});
     if(type==="issue") arr.push({ref:nextRef("issues"), issue:"", sev:"P2", rag:"r", progress:"notstarted", action:"", comments:""});
