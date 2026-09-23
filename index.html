@@ -436,6 +436,9 @@
         <input type="text" id="f-customer" placeholder="e.g. Cyderes">
         <label for="f-programmeName">Programme</label>
         <input type="text" id="f-programmeName">
+        <label for="f-overallRag">Overall readiness</label>
+        <select id="f-overallRag"></select>
+        <p class="hint" style="margin:3px 0 10px;">Normally worked out from the readiness scorecard. Override it when your judgement of the programme differs from the sum of its areas.</p>
         <label for="f-periodName">Period</label>
         <input type="text" id="f-periodName" placeholder="e.g. Steering Review · Week commencing 6 Jul 2026">
       </div>
@@ -881,6 +884,9 @@ function getDefaultState(){ return normaliseRefs({
      dashboards column so grouping the picker needs no schema change; every
      programme for one client simply carries the same value. */
   customer:"",
+  /* "" = derive from the readiness scorecard, as it always did. "g"/"a"/"r" =
+     someone has judged it differently and said so explicitly. */
+  overallRagOverride:"",
   generatedAt:"2026-07-27T15:30:00Z"
 });}
 
@@ -1217,6 +1223,8 @@ function mergeState(parsed){
   // all; normalise to "" so the picker can group them as unassigned rather than
   // printing "undefined".
   merged.customer = typeof merged.customer === "string" ? merged.customer : "";
+  // Anything that isn't a RAG letter means "derive it".
+  merged.overallRagOverride = ["g","a","r"].includes(merged.overallRagOverride) ? merged.overallRagOverride : "";
   // Backfill reference numbers. Saves made before refs existed hold assumptions
   // and dependencies as plain strings and carry no refs at all; this lifts them
   // to the current shape and issues numbers without disturbing any already set.
@@ -2472,6 +2480,15 @@ function weekOpts(){
   return Array.from({length: state.ganttWeeks}, (_, i) => i+1);
 }
 function renderGanttEditRows(){
+  const ragSel = document.getElementById("f-overallRag");
+  if(ragSel){
+    // The Auto option names the scorecard's current verdict, so the effect of
+    // choosing it is visible before you choose it.
+    ragSel.innerHTML =
+      `<option value="">Auto — ${esc(RAG_LABEL[overallRagFromReadiness()])}</option>` +
+      [["g","Green"],["a","Amber"],["r","Red"]].map(([v,l])=>`<option value="${v}">${l}</option>`).join("");
+    ragSel.value = ["g","a","r"].includes(state.overallRagOverride) ? state.overallRagOverride : "";
+  }
   document.getElementById("f-customer").value = state.customer || "";
   document.getElementById("f-programmeName").value = state.header.programme || "";
   document.getElementById("f-periodName").value = state.header.period || "";
@@ -2604,6 +2621,14 @@ function overallRagFromReadiness(){
   const hasRed = state.readiness.some(r=>r.rag==="r");
   const hasAmber = state.readiness.some(r=>r.rag==="a");
   return hasRed ? "r" : (hasAmber ? "a" : "g");
+}
+
+/* What the badge actually shows: the manual call if one has been made, otherwise
+   the scorecard's own verdict. */
+function effectiveOverallRag(){
+  return ["g","a","r"].includes(state.overallRagOverride)
+    ? state.overallRagOverride
+    : overallRagFromReadiness();
 }
 
 function computeGanttWeeks(){
@@ -2883,7 +2908,12 @@ function renderDashboard(){
   const goLive = state.goLiveDate ? new Date(state.goLiveDate+"T00:00:00") : null;
   const daysToGoLive = goLive ? daysBetween(today, goLive) : null;
 
-  const overallRag = overallRagFromReadiness();
+  const derivedRag = overallRagFromReadiness();
+  const overallRag = effectiveOverallRag();
+  const ragIsManual = ["g","a","r"].includes(p.overallRagOverride);
+  // Only worth flagging when the manual call disagrees with the evidence — an
+  // override that merely restates what the scorecard already says is not news.
+  const ragDisagrees = ragIsManual && overallRag !== derivedRag;
 
   const readinessFiltered = p.filters.readiness === "all" ? p.readiness : p.readiness.filter(r=>r.rag===p.filters.readiness);
   const riskFiltered = p.filters.risk === "all" ? p.risks : p.risks.filter(r=>r.impact===p.filters.risk);
@@ -3310,7 +3340,16 @@ function renderDashboard(){
         <h2>${esc(p.header.programme)}</h2>
         <p>${esc(p.header.period)} · Target go-live: ${goLive ? fmtDate(goLive) : "—"}</p>
       </div>
-      <span class="rag-badge ${overallRag}" data-overall-rag-badge><span class="dot"></span>Overall readiness: ${RAG_LABEL[overallRag]}</span>
+      ${de(
+        `<span class="rag-badge ${overallRag}" data-overall-rag-badge title="${ragIsManual ? `Set manually.${ragDisagrees ? ` The readiness scorecard says ${RAG_LABEL[derivedRag]}.` : ""}` : "Derived from the readiness scorecard."}"><span class="dot"></span>Overall readiness: ${RAG_LABEL[overallRag]}${ragDisagrees ? ` <span style="font-weight:400; opacity:.75;">(set manually)</span>` : ""}</span>`,
+        `<span class="rag-badge ${overallRag}" data-overall-rag-badge><span class="dot"></span>Overall readiness:
+           <select class="dash-edit" data-dstate="overallRagOverride" style="width:auto; margin-left:6px;">
+             <option value="" ${!ragIsManual?"selected":""}>Auto — ${RAG_LABEL[derivedRag]}</option>
+             <option value="g" ${p.overallRagOverride==="g"?"selected":""}>Green</option>
+             <option value="a" ${p.overallRagOverride==="a"?"selected":""}>Amber</option>
+             <option value="r" ${p.overallRagOverride==="r"?"selected":""}>Red</option>
+           </select></span>`
+      )}
     </div>
 
     ${orderedSections}
@@ -3430,6 +3469,7 @@ function renderAll(){ renderForm(); renderDashboard(); }
 
 /* ==================== Event wiring ==================== */
 document.getElementById("goLiveDate").addEventListener("change", e=>{ state.goLiveDate = e.target.value; renderDashboard(); });
+document.getElementById("f-overallRag").addEventListener("change", e=>{ state.overallRagOverride = e.target.value; renderDashboard(); });
 document.getElementById("f-customer").addEventListener("input", e=>{ state.customer = e.target.value; scheduleSave(); });
 document.getElementById("f-programmeName").addEventListener("input", e=>{ state.header.programme = e.target.value; renderDashboard(); });
 document.getElementById("f-periodName").addEventListener("input", e=>{ state.header.period = e.target.value; renderDashboard(); });
@@ -3895,6 +3935,11 @@ document.getElementById("btnDashEdit").addEventListener("click", ()=>{ setDashEd
    derived (KPI tiles, roll-up badges, overall RAG) refreshes when edit mode is
    switched off, which re-renders once. */
 function applyDashEdit(t){
+  // A handful of editors drive a top-level field rather than a row in a list.
+  if(t.dataset.dstate){
+    state[t.dataset.dstate] = t.value;
+    return true;
+  }
   if(t.dataset.dsec !== undefined){
     const sec = state.customSections[parseInt(t.dataset.dsec)];
     if(!sec) return false;
