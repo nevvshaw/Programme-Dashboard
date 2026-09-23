@@ -12,8 +12,10 @@
     --red:#C73E3E; --red-bg:#FBE7E7;
     /* Gantt bars only — deliberately its own token rather than changing --sky, which
        also drives buttons, KPI accents and the flow boxes. Chosen dark enough that the
-       white bold labels sitting on the bars stay legible (~4.6:1). */
-    --gantt-bar:var(--green);
+       white bold labels sitting on the bars stay legible: this orange is 5.2:1 against
+       white, so it clears AA for the 10.5px bold text. A brighter orange looks better
+       in isolation but drops to ~2.9:1 and makes the labels hard to read. */
+    --gantt-bar:#C2410C;
   }
   *{box-sizing:border-box;}
   body{margin:0; background:var(--bg); color:var(--ink); font-family:Calibri,"Segoe UI",Helvetica,Arial,sans-serif; -webkit-font-smoothing:antialiased;}
