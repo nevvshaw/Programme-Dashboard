@@ -370,10 +370,13 @@
   </div>
   <div class="topbar-controls">
     <div class="tb-field">
-      <label for="dashboardSelect">Customer</label>
+      <label for="dashboardSelect">Programme</label>
       <select id="dashboardSelect"></select>
     </div>
     <button class="btn" id="btnNewDashboard" title="Create a separate dashboard for another customer — your current one is untouched">+ New customer</button>
+    <button class="btn primary" id="btnNewProgramme" title="Another programme for the customer you are viewing, keeping this one's layout">+ New programme</button>
+    <button class="btn" id="btnDuplicateProgramme" title="Copy this programme, data included, into a new one">Duplicate</button>
+    <button class="btn" id="btnDeleteProgramme" title="Delete this programme — a JSON backup downloads first">Delete programme</button>
     <div class="tb-field">
       <label for="goLiveDate">Target go-live</label>
       <input type="date" id="goLiveDate">
@@ -397,6 +400,19 @@
   <!-- ============ EDIT PANEL ============ -->
   <div class="panel">
     <div class="panel-inner" id="formPanel">
+
+      <!-- Customer groups the programme picker; programme and period were shown on
+           the dashboard but had no field until now. -->
+      <div class="field-group">
+        <h2>Programme details</h2>
+        <p class="hint" style="margin-bottom:10px;">The customer groups this programme with the client's others in the picker above. Programme and period are the heading shown on the dashboard.</p>
+        <label for="f-customer">Customer</label>
+        <input type="text" id="f-customer" placeholder="e.g. Cyderes">
+        <label for="f-programmeName">Programme</label>
+        <input type="text" id="f-programmeName">
+        <label for="f-periodName">Period</label>
+        <input type="text" id="f-periodName" placeholder="e.g. Steering Review · Week commencing 6 Jul 2026">
+      </div>
 
       <!-- Owner-only. Hidden entirely for anyone who is not an owner; the policies
            enforce the same rule server-side, so hiding it is convenience, not security. -->
@@ -796,6 +812,10 @@ function getDefaultState(){ return normaliseRefs({
   // with the rest of the team via the document, like the readiness/risk filters
   // below, so everyone looking at this customer sees the same comparison point.
   trendBaselineId:null,
+  /* The client these programmes belong to. Lives in the document rather than in a
+     dashboards column so grouping the picker needs no schema change; every
+     programme for one client simply carries the same value. */
+  customer:"",
   generatedAt:"2026-07-27T15:30:00Z"
 });}
 
@@ -805,10 +825,11 @@ function getDefaultState(){ return normaliseRefs({
    which would otherwise be missing here and blow up on first render.
    Every section still exists, just with nothing in it: the owner then populates the
    ones that matter and reorders or ignores the rest in the edit panel. */
-function getBlankState(programmeName){
+function getBlankState(programmeName, customer){
   const s = getDefaultState();
 
   s.header = {programme: programmeName || "New programme", period: ""};
+  s.customer = customer || "";
   s.goLiveDate = "";
 
   // Content lists — emptied, not removed, so each section renders its own
@@ -842,6 +863,38 @@ function getBlankState(programmeName){
   s.filters = {readiness:"all", risk:"all"};
   s.generatedAt = new Date().toISOString();
 
+  return normaliseRefs(s);
+}
+
+/* Another programme for the SAME client. Unlike getBlankState — which is a
+   genuinely empty dashboard for a new client — this keeps the layout the owner has
+   already tuned (which sections exist, in what order, which are switched on, the
+   metric tile labels, the custom section definitions, the timeline length) and
+   clears only the content. Starting a sibling programme from the deck would mean
+   deleting another programme's rows by hand. */
+function getSiblingBlankState(current, programmeName){
+  const s = getBlankState(programmeName, current.customer || "");
+
+  s.sectionOrder    = Array.isArray(current.sectionOrder) ? current.sectionOrder.slice() : s.sectionOrder;
+  s.hiddenSections  = Array.isArray(current.hiddenSections) ? current.hiddenSections.slice() : s.hiddenSections;
+  s.ganttWeeks      = current.ganttWeeks || s.ganttWeeks;
+  s.ganttTitle      = current.ganttTitle || s.ganttTitle;
+
+  // Tile labels are layout; their values are not.
+  if(current.metricMeta){
+    s.metricMeta = JSON.parse(JSON.stringify(current.metricMeta));
+  }
+  if(Array.isArray(current.customMetrics)){
+    s.customMetrics = current.customMetrics.map(cm => ({label: cm.label, value: 0}));
+  }
+  // Keep each custom section's definition, drop its contents.
+  if(Array.isArray(current.customSections)){
+    s.customSections = current.customSections.map(sec =>
+      sec.type === "list"
+        ? {id: sec.id, type: "list", title: sec.title, numbered: sec.numbered, items: []}
+        : {id: sec.id, type: "table", title: sec.title, numbered: sec.numbered, rows: []}
+    );
+  }
   return normaliseRefs(s);
 }
 
@@ -1095,6 +1148,10 @@ function mergeState(parsed){
   merged.refCounters = (parsed && parsed.refCounters && typeof parsed.refCounters === "object")
     ? Object.assign({}, parsed.refCounters)
     : {};
+  // Documents saved before programmes-per-customer existed have no customer at
+  // all; normalise to "" so the picker can group them as unassigned rather than
+  // printing "undefined".
+  merged.customer = typeof merged.customer === "string" ? merged.customer : "";
   // Backfill reference numbers. Saves made before refs existed hold assumptions
   // and dependencies as plain strings and carry no refs at all; this lifts them
   // to the current shape and issues numbers without disturbing any already set.
@@ -1190,8 +1247,12 @@ async function refreshOwnerFlag(){
     console.error("Could not determine owner status:", err);
     isOwner = false;   // fail closed
   }
-  const btn = document.getElementById("btnNewDashboard");
-  if(btn) btn.style.display = isOwner ? "" : "none";
+  // Creating, duplicating and deleting all need owner rights, so they follow the
+  // same gate as "+ New customer". The policies enforce it server-side too.
+  ["btnNewDashboard","btnNewProgramme","btnDuplicateProgramme","btnDeleteProgramme"].forEach(id=>{
+    const b = document.getElementById(id);
+    if(b) b.style.display = isOwner ? "" : "none";
+  });
   const grp = document.getElementById("accessGroup");
   if(grp) grp.style.display = isOwner ? "" : "none";
   return isOwner;
@@ -1201,7 +1262,9 @@ async function fetchDashboardList(){
   if(STANDALONE || !sb) return [];
   const { data, error } = await sb
     .from("dashboards")
-    .select("id, slug, name")
+    // customer lives inside the document, so pull just that one key out rather
+    // than every dashboard's full state — the list must stay cheap.
+    .select("id, slug, name, customer:data->>customer")
     .order("name", { ascending: true });
   if(error){ console.error("Could not list dashboards:", error); return dashboardList; }
   dashboardList = data || [];
@@ -1214,13 +1277,29 @@ function dashboardDisplayName(d){
   return d.name || d.slug;
 }
 
+/* One <optgroup> per client, so several programmes for the same client read as a
+   set rather than as unrelated entries. Dashboards with no customer set — which is
+   every one created before this feature — stay ungrouped at the top and behave
+   exactly as they did, until someone fills the Customer field in. */
 function renderDashboardPicker(){
   const sel = document.getElementById("dashboardSelect");
   if(!sel) return;
   const current = DASHBOARD_SLUG;
   const known = dashboardList.some(d => d.slug === current);
-  sel.innerHTML = dashboardList.map(d =>
-      `<option value="${esc(d.slug)}" ${d.slug===current?"selected":""}>${esc(dashboardDisplayName(d))}</option>`
+  const opt = d => `<option value="${esc(d.slug)}" ${d.slug===current?"selected":""}>${esc(dashboardDisplayName(d))}</option>`;
+
+  const ungrouped = dashboardList.filter(d => !(d.customer || "").trim());
+  const grouped = new Map();
+  dashboardList.filter(d => (d.customer || "").trim()).forEach(d => {
+    const key = d.customer.trim();
+    if(!grouped.has(key)) grouped.set(key, []);
+    grouped.get(key).push(d);
+  });
+
+  sel.innerHTML =
+    ungrouped.map(opt).join("") +
+    [...grouped.keys()].sort((a,b)=>a.localeCompare(b)).map(k =>
+      `<optgroup label="${esc(k)}">${grouped.get(k).map(opt).join("")}</optgroup>`
     ).join("")
     // A slug that isn't in the list yet (first load after creation) still needs to
     // show as the selected option, otherwise the picker silently reads as another
@@ -1279,6 +1358,146 @@ async function createDashboard(){
     return;
   }
   openDashboard(slug);
+}
+
+/* ---- Programmes within one customer ----
+   A dashboard row is one programme. Several rows sharing a customer are several
+   programmes for that client; the picker groups them. Creating and duplicating
+   both go through the same INSERT policy that "+ New customer" already uses, so
+   no new database permission is involved. */
+
+/* Slugs are unique across the whole table, and two clients can easily both run a
+   "Cutover" programme — so qualify with the client and add a numeric suffix if
+   that is still taken. */
+function uniqueSlug(base){
+  let slug = slugify(base);
+  if(!slug) return "";
+  if(!dashboardList.some(d => d.slug === slug)) return slug;
+  for(let n = 2; n < 100; n++){
+    const candidate = slugify(base + "-" + n);
+    if(!dashboardList.some(d => d.slug === candidate)) return candidate;
+  }
+  return "";
+}
+
+async function insertProgramme(name, slug, seed){
+  const { error } = await sb.from("dashboards").insert({
+    slug: slug,
+    name: name,
+    data: seed,
+    generated_at: seed.generatedAt || null,
+    updated_by: currentUser ? currentUser.id : null
+  });
+  if(error){
+    if(error.code === "23505"){
+      alert("That name was just taken by someone else. Try again.");
+      return false;
+    }
+    alert("Could not create the programme — " + describeError(error));
+    return false;
+  }
+  openDashboard(slug);
+  return true;
+}
+
+/* Another programme for the client already on screen: same customer, same layout,
+   no content. */
+async function createProgramme(){
+  const customer = (state.customer || "").trim();
+  if(!customer){
+    alert('Set the Customer field first (Programme details, at the top of the edit panel).\n\nThat is what tells the dashboard which client a new programme belongs to.');
+    return;
+  }
+  const name = (prompt(`Name the new programme for ${customer}:`) || "").trim();
+  if(!name) return;
+
+  const slug = uniqueSlug(customer + "-" + name);
+  if(!slug){ alert('That name has no letters or numbers in it — try something like "Cutover Phase 2".'); return; }
+
+  if(!confirm(`Create "${name}" for ${customer}?\n\nIt keeps this programme's layout — the same sections, in the same order, with the same tile labels — but starts with no data. Nothing here is changed.`)) return;
+
+  await insertProgramme(name, slug, getSiblingBlankState(state, name));
+}
+
+/* A full copy, content included — for a programme that is a near-repeat of this one. */
+async function duplicateProgramme(){
+  const current = dashboardList.find(d => d.slug === DASHBOARD_SLUG);
+  const currentName = current ? dashboardDisplayName(current) : (state.header.programme || "this programme");
+  const name = (prompt("Name the duplicate:", currentName + " (copy)") || "").trim();
+  if(!name) return;
+
+  const slug = uniqueSlug((state.customer || "") + "-" + name);
+  if(!slug){ alert('That name has no letters or numbers in it — try something else.'); return; }
+
+  if(!confirm(`Duplicate "${currentName}" as "${name}"?\n\nEverything on the dashboard is copied. Saved weekly versions are not — the copy starts its own history.`)) return;
+
+  const copy = JSON.parse(JSON.stringify(state));
+  copy.header = Object.assign({}, copy.header, {programme: name});
+  copy.generatedAt = new Date().toISOString();
+  await insertProgramme(name, slug, copy);
+}
+
+/* Deleting takes the dashboard row with it: dashboard_versions and
+   dashboard_access both cascade. A JSON backup is downloaded first so the
+   decision is recoverable. */
+async function deleteProgramme(){
+  const current = dashboardList.find(d => d.slug === DASHBOARD_SLUG);
+  if(!current){ alert("This programme is not in the list yet — reload and try again."); return; }
+  if(dashboardList.length <= 1){ alert("This is the only dashboard. Create another before deleting this one."); return; }
+
+  const label = dashboardDisplayName(current);
+  let versions = [];
+  try{
+    const { data } = await sb.from("dashboard_versions")
+      .select("label, data, created_at")
+      .eq("dashboard_id", current.id)
+      .order("created_at", { ascending: false });
+    versions = data || [];
+  }catch(err){ console.error("Could not read version history for the backup:", err); }
+
+  const alsoVersions = versions.length
+    ? ` and its ${versions.length} saved version${versions.length === 1 ? "" : "s"}`
+    : "";
+  if(!confirm(`Delete "${label}"${alsoVersions}?\n\nThis removes it for everyone, not just you. A JSON backup downloads first — keep it, because this cannot be undone from inside the dashboard.`)) return;
+
+  // Back up before touching anything; if the download fails, delete nothing.
+  try{
+    downloadFile(
+      `dashboard-backup-${slugify(label)}-${new Date().toISOString().slice(0,10)}.json`,
+      "application/json",
+      JSON.stringify({
+        format: "programme-dashboard-backup",
+        version: 1,
+        exportedAt: new Date().toISOString(),
+        slug: current.slug,
+        name: current.name,
+        state: state,
+        versions: versions
+      }, null, 2)
+    );
+  }catch(err){
+    console.error("Backup before delete failed:", err);
+    alert("Could not save the backup file, so nothing was deleted. Check your browser's download settings and try again.");
+    return;
+  }
+
+  const { data: removed, error } = await sb.from("dashboards")
+    .delete()
+    .eq("id", current.id)
+    .select("id");
+
+  if(error){ alert("Could not delete the programme — " + describeError(error)); return; }
+  // Row-level security denies a delete by matching no rows rather than by
+  // raising: a silent success here means the policy is missing, not that the
+  // programme went away.
+  if(!removed || removed.length === 0){
+    alert("The database refused the delete.\n\nThe dashboards table has no delete policy, so nothing was removed. Your backup has still been downloaded. Ask whoever administers Supabase to add a delete policy for owners.");
+    return;
+  }
+
+  const next = dashboardList.find(d => d.slug !== DASHBOARD_SLUG);
+  alert(`"${label}" has been deleted. Opening ${next ? dashboardDisplayName(next) : "the dashboard list"}.`);
+  openDashboard(next ? next.slug : DEFAULT_DASHBOARD_SLUG);
 }
 
 /* ---- Access panel (owners only) ----
@@ -2046,6 +2265,9 @@ function weekOpts(){
   return Array.from({length: state.ganttWeeks}, (_, i) => i+1);
 }
 function renderGanttEditRows(){
+  document.getElementById("f-customer").value = state.customer || "";
+  document.getElementById("f-programmeName").value = state.header.programme || "";
+  document.getElementById("f-periodName").value = state.header.period || "";
   document.getElementById("f-ganttTitle").value = state.ganttTitle;
   document.getElementById("f-ganttStart").value = state.ganttStartDate;
   document.getElementById("f-ganttWeeks").value = state.ganttWeeks;
@@ -2833,6 +3055,9 @@ function renderAll(){ renderForm(); renderDashboard(); }
 
 /* ==================== Event wiring ==================== */
 document.getElementById("goLiveDate").addEventListener("change", e=>{ state.goLiveDate = e.target.value; renderDashboard(); });
+document.getElementById("f-customer").addEventListener("input", e=>{ state.customer = e.target.value; scheduleSave(); });
+document.getElementById("f-programmeName").addEventListener("input", e=>{ state.header.programme = e.target.value; renderDashboard(); });
+document.getElementById("f-periodName").addEventListener("input", e=>{ state.header.period = e.target.value; renderDashboard(); });
 document.getElementById("f-ganttTitle").addEventListener("input", e=>{ state.ganttTitle = e.target.value; renderDashboard(); });
 document.getElementById("f-ganttStart").addEventListener("change", e=>{ state.ganttStartDate = e.target.value; renderDashboard(); });
 document.getElementById("f-ganttWeeks").addEventListener("input", e=>{
@@ -3280,6 +3505,9 @@ document.getElementById("authForm").addEventListener("submit", async (e)=>{
 
 document.getElementById("dashboardSelect").addEventListener("change", e=>{ openDashboard(e.target.value); });
 document.getElementById("btnNewDashboard").addEventListener("click", ()=>{ createDashboard(); });
+document.getElementById("btnNewProgramme").addEventListener("click", ()=>{ createProgramme(); });
+document.getElementById("btnDuplicateProgramme").addEventListener("click", ()=>{ duplicateProgramme(); });
+document.getElementById("btnDeleteProgramme").addEventListener("click", ()=>{ deleteProgramme(); });
 document.getElementById("btnGrantAccess").addEventListener("click", ()=>{ grantAccess(); });
 document.getElementById("accessEmail").addEventListener("keydown", e=>{
   // Enter in the email box should add, not submit anything else on the page.
