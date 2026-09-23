@@ -675,13 +675,14 @@ function normaliseRefs(st){
     // them to {ref, text} so every referenced type has the same shape.
     st[key] = st[key].map(item =>
       (typeof item === "string") ? {ref:"", text:item} : Object.assign({}, item));
-    let counter = parseInt(st.refCounters[key], 10) || 0;
-    // Honour refs that were already saved, and make sure the counter clears the
-    // highest one present — restoring an old version must not re-issue a ref.
-    st[key].forEach(item=>{
+    // Start from the highest ref actually present rather than from the stored
+    // counter. The counter used only ever ratchet upwards, so a section emptied
+    // last week still issued W4 today; tracking reality means numbers freed by a
+    // deletion come back. Items that already carry a ref keep it.
+    let counter = st[key].reduce((max, item)=>{
       const n = parseInt(String(item.ref || "").replace(/^\D+/, ""), 10);
-      if(!isNaN(n) && n > counter) counter = n;
-    });
+      return (!isNaN(n) && n > max) ? n : max;
+    }, 0);
     st[key].forEach(item=>{ if(!item.ref) item.ref = REF_TYPES[key] + (++counter); });
     st.refCounters[key] = counter;
   });
@@ -692,6 +693,21 @@ function normaliseRefs(st){
    Refs are hand-editable, so the counter alone is not enough: someone may have
    typed "R7" into a row while the counter still reads 4. Skip anything already in
    use so an auto-allocated ref can never collide with a manually entered one. */
+/* Pull a type's counter back down to the highest reference actually present, so a
+   number freed by a deletion can be handed out again — and an emptied section
+   starts from 1 again rather than carrying on from whatever it reached before.
+   Existing items are never renumbered: W1 stays W1, so a reference written down
+   in a meeting note still points at the same thing. */
+function syncRefCounter(st, key){
+  if(!st.refCounters) st.refCounters = {};
+  const highest = (Array.isArray(st[key]) ? st[key] : []).reduce((max, item)=>{
+    const n = parseInt(String((item && item.ref) || "").replace(/^\D+/, ""), 10);
+    return (!isNaN(n) && n > max) ? n : max;
+  }, 0);
+  st.refCounters[key] = highest;
+  return highest;
+}
+
 function nextRef(key){
   if(!state.refCounters) state.refCounters = {};
   const inUse = new Set((Array.isArray(state[key]) ? state[key] : [])
@@ -3740,7 +3756,11 @@ panel.addEventListener("click", e=>{
   const rmBtn = e.target.closest("[data-remove]");
   if(rmBtn){
     const type = rmBtn.dataset.remove, i = parseInt(rmBtn.dataset.i);
-    state[ARR_MAP[type]].splice(i,1);
+    const arrKey = ARR_MAP[type];
+    state[arrKey].splice(i,1);
+    // Deleting frees the numbers above whatever is left: empty the section and the
+    // next one added is W1 again.
+    if(REF_TYPES[arrKey]) syncRefCounter(state, arrKey);
     renderForm(); renderDashboard();
   }
 });
