@@ -12,8 +12,10 @@
     --red:#C73E3E; --red-bg:#FBE7E7;
     /* Gantt bars only — deliberately its own token rather than changing --sky, which
        also drives buttons, KPI accents and the flow boxes. Chosen dark enough that the
-       white bold labels sitting on the bars stay legible (~4.6:1). */
-    --gantt-bar:var(--green);
+       white bold labels sitting on the bars stay legible: this orange is 5.2:1 against
+       white, so it clears AA for the 10.5px bold text. A brighter orange looks better
+       in isolation but drops to ~2.9:1 and makes the labels hard to read. */
+    --gantt-bar:#C2410C;
   }
   *{box-sizing:border-box;}
   body{margin:0; background:var(--bg); color:var(--ink); font-family:Calibri,"Segoe UI",Helvetica,Arial,sans-serif; -webkit-font-smoothing:antialiased;}
@@ -169,6 +171,17 @@
   .gantt .lbl-cell{padding:8px 6px; font-weight:600; color:var(--ink); display:flex; align-items:center;}
   .gantt .cell{background:#F7F8FB; border-radius:3px; min-height:26px; align-self:center;}
   .gantt .bar{background:var(--gantt-bar); border-radius:4px; height:26px; align-self:center; display:flex; align-items:center; padding:0 8px; color:#fff; font-size:10.5px; font-weight:700; white-space:nowrap; overflow:hidden; position:relative; z-index:1;}
+  /* Inline editing on the dashboard. Compact so an editable table stays the same
+     shape as the read-only one — switching modes must not reflow the page. */
+  .dash-edit{font-family:inherit; font-size:12px; padding:3px 5px; border:1px solid var(--border);
+    border-radius:4px; background:#fff; color:var(--ink); width:100%; max-width:100%;}
+  .dash-edit:focus{outline:2px solid var(--sky); outline-offset:1px; border-color:var(--sky);}
+  textarea.dash-edit{min-height:44px; line-height:1.35; resize:vertical;}
+  .dash-edit[type="number"]{width:72px;}
+  #dash.editing td{vertical-align:middle;}
+  /* An editable dashboard is a working view, never a presented one. */
+  @media print{ .dash-edit{border:none !important; padding:0 !important; background:transparent !important;} }
+
   .gantt-legend{display:flex; gap:16px; margin-top:12px; font-size:11px; color:var(--muted); flex-wrap:wrap;}
 
   .flow{display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-top:6px;}
@@ -389,6 +402,7 @@
     <button class="btn" id="btnImport">Import data</button>
     <input type="file" id="importFileInput" accept="application/json,.json" style="display:none;">
     <button class="btn primary" id="btnExportHtml" title="Download a single HTML file with today's data baked in — anyone can open it, no import needed">Share as HTML</button>
+    <button class="btn" id="btnDashEdit" title="Edit the dashboard sections in place, without opening the input panel">Edit on dashboard</button>
     <button class="btn" id="btnTogglePanel">Hide inputs</button>
     <button class="btn" id="btnReset">Reset to deck data</button>
     <button class="btn primary" id="btnPrint">Print / Save PDF</button>
@@ -1807,7 +1821,73 @@ function formatTimestamp(iso){
 }
 
 /* ---- Input panel collapse ---- */
+/* Per-browser, not part of the shared document: whether one person is editing on
+   the dashboard is their business, not something to push at every other viewer. */
+const DASH_EDIT_KEY = "golive-dashboard-dash-edit";
+let dashEdit = false;
+
 const PANEL_STATE_KEY = "golive-dashboard-panel-collapsed";
+
+/* Chrome only — no re-render. Needed separately from setDashEdit because the mode
+   is restored from localStorage during init, before the first render, and the class
+   and button label have to match the mode the page actually comes up in. */
+function syncDashEditChrome(){
+  const dash = document.getElementById("dash");
+  if(dash) dash.classList.toggle("editing", dashEdit);
+  const btn = document.getElementById("btnDashEdit");
+  if(btn){
+    btn.textContent = dashEdit ? "Done editing" : "Edit on dashboard";
+    btn.classList.toggle("primary", dashEdit);
+    // A read-only export has nothing to edit and no way to save.
+    btn.style.display = STANDALONE ? "none" : "";
+  }
+}
+
+function setDashEdit(on){
+  dashEdit = !!on;
+  syncDashEditChrome();
+  try{ localStorage.setItem(DASH_EDIT_KEY, dashEdit ? "1" : "0"); }catch(err){}
+  // Re-render on the way in AND out: in, to swap cells for fields; out, to refresh
+  // everything derived from them (KPI tiles, roll-up badges, overall RAG).
+  renderDashboard();
+}
+
+/* Read-only markup, or an editor, depending on the mode. Keeps every cell's two
+   forms side by side so they can't drift apart. */
+function de(readOnly, editor){ return dashEdit ? editor : readOnly; }
+
+/* Editors are addressed exactly like the panel's rows — same data-type/field/index
+   contract — so the two stay conceptually identical. */
+function dInput(type, i, field, value, kind){
+  return `<input class="dash-edit" type="${kind||"text"}" data-dtype="${esc(type)}" data-dfield="${esc(field)}" data-di="${i}" value="${esc(value ?? "")}">`;
+}
+function dArea(type, i, field, value){
+  return `<textarea class="dash-edit" data-dtype="${esc(type)}" data-dfield="${esc(field)}" data-di="${i}">${esc(value ?? "")}</textarea>`;
+}
+function dSelect(type, i, field, value, opts){
+  return `<select class="dash-edit" data-dtype="${esc(type)}" data-dfield="${esc(field)}" data-di="${i}">`
+    + opts.map(([v,l])=>`<option value="${esc(v)}" ${String(value)===String(v)?"selected":""}>${esc(l)}</option>`).join("")
+    + `</select>`;
+}
+function dsInput(si, ri, field, value, kind){
+  return `<input class="dash-edit" type="${kind||"text"}" data-dsec="${si}" data-dsubrow="${ri}" data-dsubfield="${esc(field)}" value="${esc(value ?? "")}">`;
+}
+function dsArea(si, ri, field, value){
+  return `<textarea class="dash-edit" data-dsec="${si}" data-dsubrow="${ri}" data-dsubfield="${esc(field)}">${esc(value ?? "")}</textarea>`;
+}
+function dsSelect(si, ri, field, value, opts){
+  return `<select class="dash-edit" data-dsec="${si}" data-dsubrow="${ri}" data-dsubfield="${esc(field)}">`
+    + opts.map(([v,l])=>`<option value="${esc(v)}" ${String(value)===String(v)?"selected":""}>${esc(l)}</option>`).join("")
+    + `</select>`;
+}
+const RAG_OPTS  = [["g","Green"],["a","Amber"],["r","Red"]];
+const IMPACT_OPTS = [["High","High"],["Medium","Medium"],["Low","Low"]];
+const SEV_OPTS  = [["P1","P1"],["P2","P2"],["P3","P3"]];
+const ENGAGE_OPTS = [["g","Supportive"],["a","Neutral"],["r","Resistant"]];
+/* Lazy: DECISION_OPTS and PROGRESS_OPTS are declared further down this file, so
+   these must not be evaluated while the module is still initialising. */
+const decisionSel = () => DECISION_OPTS.map(o=>[o,o]);
+const progressSel = () => PROGRESS_OPTS.map(([v,l])=>[v,l]);
 
 function setPanelCollapsed(collapsed){
   const layout = document.getElementById("layoutRoot");
@@ -2827,14 +2907,19 @@ function renderDashboard(){
       <table>
         <thead><tr><th>Area</th><th>Status</th><th>Evidence</th><th>Must clear</th><th>Owner</th></tr></thead>
         <tbody>
-          ${readinessFiltered.length ? readinessFiltered.map(r=>`
+          ${readinessFiltered.length ? readinessFiltered.map(r=>{
+            // The rows on screen may be filtered, so the position here is not the
+            // position in state — resolve the real index by identity before editing.
+            const i = p.readiness.indexOf(r);
+            return `
             <tr>
-              <td><strong>${esc(r.area)}</strong></td>
-              <td><span class="pill ${r.rag}"><span class="dot"></span>${RAG_LABEL[r.rag]}</span></td>
-              <td>${esc(r.evidence)}</td>
-              <td>${esc(r.mustClear)}</td>
-              <td>${esc(r.owner)}</td>
-            </tr>`).join("") : `<tr><td colspan="5" class="empty-note">No areas match this filter.</td></tr>`}
+              <td>${de(`<strong>${esc(r.area)}</strong>`, dInput("readiness", i, "area", r.area))}</td>
+              <td>${de(`<span class="pill ${r.rag}"><span class="dot"></span>${RAG_LABEL[r.rag]}</span>`, dSelect("readiness", i, "rag", r.rag, RAG_OPTS))}</td>
+              <td>${de(esc(r.evidence), dArea("readiness", i, "evidence", r.evidence))}</td>
+              <td>${de(esc(r.mustClear), dArea("readiness", i, "mustClear", r.mustClear))}</td>
+              <td>${de(esc(r.owner), dInput("readiness", i, "owner", r.owner))}</td>
+            </tr>`;
+          }).join("") : `<tr><td colspan="5" class="empty-note">No areas match this filter.</td></tr>`}
         </tbody>
       </table>
     </div>`,
@@ -2893,25 +2978,24 @@ function renderDashboard(){
       <table>
         <thead><tr><th style="width:44px;">Ref</th><th>Workstream</th><th>Lead</th><th>RAG</th><th>Status</th><th style="width:110px;">Progress</th><th>Next milestone</th><th>Commentary</th></tr></thead>
         <tbody>
-          ${p.workstreams.length ? p.workstreams.map(w=>{
+          ${p.workstreams.length ? p.workstreams.map((w,i)=>{
             const pcNum = Math.max(0, Math.min(100, Number(w.percent)||0));
             return `
             <tr>
               <td><strong>${esc(w.ref||"")}</strong></td>
-              <td><strong>${esc(w.name)}</strong></td>
-              <td>${esc(w.lead||"")}</td>
-              <td><span class="pill ${w.rag||"a"}"><span class="dot"></span>${RAG_LABEL[w.rag||"a"]}</span></td>
-              <td><span class="status-pill ${w.progress||"notstarted"}">${PROGRESS_OPTS.find(o=>o[0]===(w.progress||"notstarted"))?.[1]}</span></td>
-              <td>
+              <td>${de(`<strong>${esc(w.name)}</strong>`, dInput("workstream", i, "name", w.name))}</td>
+              <td>${de(esc(w.lead||""), dInput("workstream", i, "lead", w.lead||""))}</td>
+              <td>${de(`<span class="pill ${w.rag||"a"}"><span class="dot"></span>${RAG_LABEL[w.rag||"a"]}</span>`, dSelect("workstream", i, "rag", w.rag||"a", RAG_OPTS))}</td>
+              <td>${de(`<span class="status-pill ${w.progress||"notstarted"}">${PROGRESS_OPTS.find(o=>o[0]===(w.progress||"notstarted"))?.[1]}</span>`, dSelect("workstream", i, "progress", w.progress||"notstarted", progressSel()))}</td>
+              <td>${de(`
                 <div style="display:flex; align-items:center; gap:6px;">
                   <div style="flex:1; height:6px; border-radius:3px; background:var(--border); overflow:hidden;">
                     <div style="width:${pcNum}%; height:100%; background:var(--sky);"></div>
                   </div>
                   <span style="font-size:11px; font-weight:700; color:var(--muted);">${pcNum}%</span>
-                </div>
-              </td>
-              <td>${esc(w.milestone||"")}</td>
-              <td>${esc(w.commentary||"")}</td>
+                </div>`, dInput("workstream", i, "percent", pcNum, "number"))}</td>
+              <td>${de(esc(w.milestone||""), dInput("workstream", i, "milestone", w.milestone||""))}</td>
+              <td>${de(esc(w.commentary||""), dArea("workstream", i, "commentary", w.commentary||""))}</td>
             </tr>`;
           }).join("") : `<tr><td colspan="8" class="empty-note">No workstreams yet. Add them in the edit panel.</td></tr>`}
         </tbody>
@@ -2924,16 +3008,16 @@ function renderDashboard(){
       <table>
         <thead><tr><th style="width:44px;">Ref</th><th>Name</th><th>Role</th><th>Organisation</th><th>Influence</th><th>Engagement</th><th>Contact</th><th>Notes</th></tr></thead>
         <tbody>
-          ${p.stakeholders.length ? p.stakeholders.map(k=>`
+          ${p.stakeholders.length ? p.stakeholders.map((k,i)=>`
             <tr>
               <td><strong>${esc(k.ref||"")}</strong></td>
-              <td><strong>${esc(k.name)}</strong></td>
-              <td>${esc(k.role||"")}</td>
-              <td>${esc(k.org||"")}</td>
-              <td><span class="sev ${String(k.influence||"Medium").toLowerCase()}">${esc(k.influence||"Medium")}</span></td>
-              <td><span class="pill ${k.engagement||"a"}"><span class="dot"></span>${ENGAGEMENT_LABEL[k.engagement||"a"]}</span></td>
-              <td>${esc(k.contact||"")}</td>
-              <td>${esc(k.notes||"")}</td>
+              <td>${de(`<strong>${esc(k.name)}</strong>`, dInput("stakeholder", i, "name", k.name))}</td>
+              <td>${de(esc(k.role||""), dInput("stakeholder", i, "role", k.role||""))}</td>
+              <td>${de(esc(k.org||""), dInput("stakeholder", i, "org", k.org||""))}</td>
+              <td>${de(`<span class="sev ${String(k.influence||"Medium").toLowerCase()}">${esc(k.influence||"Medium")}</span>`, dSelect("stakeholder", i, "influence", k.influence||"Medium", IMPACT_OPTS))}</td>
+              <td>${de(`<span class="pill ${k.engagement||"a"}"><span class="dot"></span>${ENGAGEMENT_LABEL[k.engagement||"a"]}</span>`, dSelect("stakeholder", i, "engagement", k.engagement||"a", ENGAGE_OPTS))}</td>
+              <td>${de(esc(k.contact||""), dInput("stakeholder", i, "contact", k.contact||""))}</td>
+              <td>${de(esc(k.notes||""), dArea("stakeholder", i, "notes", k.notes||""))}</td>
             </tr>`).join("") : `<tr><td colspan="8" class="empty-note">No stakeholders yet. Add them in the edit panel.</td></tr>`}
         </tbody>
       </table>
@@ -2953,9 +3037,11 @@ function renderDashboard(){
       <table>
         <thead><tr><th class="ref-col">Ref</th><th>Risk</th><th>Impact</th><th>Mitigation</th></tr></thead>
         <tbody>
-          ${riskFiltered.length ? riskFiltered.map(r=>`
-            <tr><td class="ref-cell">${esc(r.ref||"—")}</td><td>${esc(r.risk)}</td><td><span class="sev ${r.impact.toLowerCase()}">${esc(r.impact)}</span></td><td>${esc(r.mitigation)}</td></tr>
-          `).join("") : `<tr><td colspan="4" class="empty-note">No risks match this filter.</td></tr>`}
+          ${riskFiltered.length ? riskFiltered.map(r=>{
+            const i = p.risks.indexOf(r);
+            return `
+            <tr><td class="ref-cell">${esc(r.ref||"—")}</td><td>${de(esc(r.risk), dArea("risk", i, "risk", r.risk))}</td><td>${de(`<span class="sev ${r.impact.toLowerCase()}">${esc(r.impact)}</span>`, dSelect("risk", i, "impact", r.impact, IMPACT_OPTS))}</td><td>${de(esc(r.mitigation), dArea("risk", i, "mitigation", r.mitigation))}</td></tr>
+          `;}).join("") : `<tr><td colspan="4" class="empty-note">No risks match this filter.</td></tr>`}
         </tbody>
       </table>
     </div>`,
@@ -2966,8 +3052,8 @@ function renderDashboard(){
       <table>
         <thead><tr><th class="ref-col">Ref</th><th>Issue</th><th>Sev.</th><th>RAG Status</th><th>Status</th><th>Action &amp; owner</th><th>Comments</th></tr></thead>
         <tbody>
-          ${p.issues.length ? p.issues.map(it=>`
-            <tr><td class="ref-cell">${esc(it.ref||"—")}</td><td>${esc(it.issue)}</td><td><span class="sev ${it.sev.toLowerCase()}">${esc(it.sev)}</span></td><td><span class="pill ${it.rag||'r'}"><span class="dot"></span>${RAG_LABEL[it.rag||'r']}</span></td><td><span class="status-pill ${it.progress||'notstarted'}">${PROGRESS_OPTS.find(o=>o[0]===(it.progress||'notstarted'))?.[1]}</span></td><td>${esc(it.action)}</td><td>${esc(it.comments||"")}</td></tr>
+          ${p.issues.length ? p.issues.map((it,i)=>`
+            <tr><td class="ref-cell">${esc(it.ref||"—")}</td><td>${de(esc(it.issue), dArea("issue", i, "issue", it.issue))}</td><td>${de(`<span class="sev ${it.sev.toLowerCase()}">${esc(it.sev)}</span>`, dSelect("issue", i, "sev", it.sev, SEV_OPTS))}</td><td>${de(`<span class="pill ${it.rag||'r'}"><span class="dot"></span>${RAG_LABEL[it.rag||'r']}</span>`, dSelect("issue", i, "rag", it.rag||'r', RAG_OPTS))}</td><td>${de(`<span class="status-pill ${it.progress||'notstarted'}">${PROGRESS_OPTS.find(o=>o[0]===(it.progress||'notstarted'))?.[1]}</span>`, dSelect("issue", i, "progress", it.progress||'notstarted', progressSel()))}</td><td>${de(esc(it.action), dArea("issue", i, "action", it.action))}</td><td>${de(esc(it.comments||""), dArea("issue", i, "comments", it.comments||""))}</td></tr>
           `).join("") : `<tr><td colspan="7" class="empty-note">No issues logged.</td></tr>`}
         </tbody>
       </table>
@@ -2979,18 +3065,18 @@ function renderDashboard(){
       <table>
         <thead><tr><th>Defect #</th><th>Description</th><th>Sev.</th><th>Status</th><th>Owner</th><th>Comments</th><th>Date for resolution</th></tr></thead>
         <tbody>
-          ${p.defects.length ? p.defects.map(d=>{
+          ${p.defects.length ? p.defects.map((d,i)=>{
             const rd = d.resolutionDate ? new Date(d.resolutionDate+"T00:00:00") : null;
             const st = d.status || "open";
             return `
             <tr>
-              <td>${esc(d.defectNo) || "—"}</td>
-              <td>${esc(d.description)}</td>
-              <td><span class="sev ${d.severity.toLowerCase()}">${esc(d.severity)}</span></td>
-              <td><span class="status-pill ${st}">${DEFECT_STATUS_OPTS.find(o=>o[0]===st)?.[1] || "Open"}</span></td>
-              <td>${esc(d.owner)}</td>
-              <td>${esc(d.comments||"")}</td>
-              <td>${rd ? esc(fmtDate(rd)) : "—"}</td>
+              <td>${de(esc(d.defectNo) || "—", dInput("defect", i, "defectNo", d.defectNo))}</td>
+              <td>${de(esc(d.description), dArea("defect", i, "description", d.description))}</td>
+              <td>${de(`<span class="sev ${d.severity.toLowerCase()}">${esc(d.severity)}</span>`, dSelect("defect", i, "severity", d.severity, SEV_OPTS))}</td>
+              <td>${de(`<span class="status-pill ${st}">${DEFECT_STATUS_OPTS.find(o=>o[0]===st)?.[1] || "Open"}</span>`, dSelect("defect", i, "status", st, DEFECT_STATUS_OPTS))}</td>
+              <td>${de(esc(d.owner), dInput("defect", i, "owner", d.owner))}</td>
+              <td>${de(esc(d.comments||""), dArea("defect", i, "comments", d.comments||""))}</td>
+              <td>${de(rd ? esc(fmtDate(rd)) : "—", dInput("defect", i, "resolutionDate", d.resolutionDate||"", "date"))}</td>
             </tr>`;
           }).join("") : `<tr><td colspan="7" class="empty-note">No open defects logged.</td></tr>`}
         </tbody>
@@ -3028,17 +3114,17 @@ function renderDashboard(){
       <table>
         <thead><tr><th>Decision</th><th>Detail</th><th>Status</th></tr></thead>
         <tbody>
-          ${p.decisions.map(d=>`
+          ${p.decisions.map((d,i)=>`
             <tr>
-              <td><strong>${esc(d.title)}</strong></td>
-              <td>${esc(d.detail)}</td>
-              <td><span class="pill ${d.status==='Approved'?'g':d.status==='Deferred'?'r':'a'}"><span class="dot"></span>${esc(d.status)}</span></td>
+              <td>${de(`<strong>${esc(d.title)}</strong>`, dInput("decision", i, "title", d.title))}</td>
+              <td>${de(esc(d.detail), dArea("decision", i, "detail", d.detail))}</td>
+              <td>${de(`<span class="pill ${d.status==='Approved'?'g':d.status==='Deferred'?'r':'a'}"><span class="dot"></span>${esc(d.status)}</span>`, dSelect("decision", i, "status", d.status, decisionSel()))}</td>
             </tr>`).join("")}
         </tbody>
       </table>
     </div>`,
 
-    customSections: () => p.customSections.map(sec=>{
+    customSections: () => p.customSections.map((sec,si)=>{
       if(sec.type === "list"){
         return `
           <div class="card">
@@ -3056,13 +3142,13 @@ function renderDashboard(){
               ${sec.rows.length ? sec.rows.map((r,i)=>`
                 <tr>
                   ${sec.numbered ? `<td>${i+1}</td>` : ""}
-                  <td><strong>${esc(r.item)}</strong></td>
-                  ${sec.priorityLayout ? `<td>${esc(r.impact||"")}</td>` : ""}
-                  <td><span class="pill ${r.status}"><span class="dot"></span>${RAG_LABEL[r.status]}</span></td>
-                  <td><span class="status-pill ${r.progress||'notstarted'}">${PROGRESS_OPTS.find(o=>o[0]===(r.progress||'notstarted'))?.[1]}</span></td>
-                  <td>${dueCell(r, today)}</td>
-                  <td>${esc(r.detail)}</td>
-                  <td>${esc(r.owner)}</td>
+                  <td>${de(`<strong>${esc(r.item)}</strong>`, dsInput(si, i, "item", r.item))}</td>
+                  ${sec.priorityLayout ? `<td>${de(esc(r.impact||""), dsInput(si, i, "impact", r.impact||""))}</td>` : ""}
+                  <td>${de(`<span class="pill ${r.status}"><span class="dot"></span>${RAG_LABEL[r.status]}</span>`, dsSelect(si, i, "status", r.status, RAG_OPTS))}</td>
+                  <td>${de(`<span class="status-pill ${r.progress||'notstarted'}">${PROGRESS_OPTS.find(o=>o[0]===(r.progress||'notstarted'))?.[1]}</span>`, dsSelect(si, i, "progress", r.progress||'notstarted', progressSel()))}</td>
+                  <td>${de(dueCell(r, today), dsInput(si, i, "due", r.due||"", "date"))}</td>
+                  <td>${de(esc(r.detail), dsArea(si, i, "detail", r.detail))}</td>
+                  <td>${de(esc(r.owner), dsInput(si, i, "owner", r.owner))}</td>
                 </tr>`).join("") : `<tr><td colspan="${numCols}" class="empty-note">No rows yet.</td></tr>`}
             </tbody>
           </table>
@@ -3661,6 +3747,43 @@ document.getElementById("authForm").addEventListener("submit", async (e)=>{
 
 document.getElementById("dashboardSelect").addEventListener("change", e=>{ openDashboard(e.target.value); });
 document.getElementById("btnNewDashboard").addEventListener("click", ()=>{ createDashboard(); });
+document.getElementById("btnDashEdit").addEventListener("click", ()=>{ setDashEdit(!dashEdit); });
+
+/* Inline editing writes straight to state and never re-renders the dashboard while
+   you are typing in it — innerHTML is rebuilt wholesale, so a re-render would throw
+   focus out of the field on every keystroke. renderForm() is safe to call because
+   the panel is a separate subtree; it keeps the two views in step. Everything
+   derived (KPI tiles, roll-up badges, overall RAG) refreshes when edit mode is
+   switched off, which re-renders once. */
+function applyDashEdit(t){
+  if(t.dataset.dsec !== undefined){
+    const sec = state.customSections[parseInt(t.dataset.dsec)];
+    if(!sec) return false;
+    const row = sec.rows && sec.rows[parseInt(t.dataset.dsubrow)];
+    if(!row || !t.dataset.dsubfield) return false;
+    row[t.dataset.dsubfield] = t.value;
+    return true;
+  }
+  const type = t.dataset.dtype, field = t.dataset.dfield, i = parseInt(t.dataset.di);
+  if(!type || !field || !ARR_MAP[type]) return false;
+  const arr = state[ARR_MAP[type]];
+  if(!arr || !arr[i]) return false;
+  arr[i][field] = (field === "percent") ? Math.max(0, Math.min(100, parseInt(t.value)||0)) : t.value;
+  return true;
+}
+
+const dashEl = document.getElementById("dash");
+dashEl.addEventListener("input", e=>{
+  const t = e.target;
+  if(!t.classList || !t.classList.contains("dash-edit")) return;
+  if(applyDashEdit(t)) scheduleSave();
+});
+dashEl.addEventListener("change", e=>{
+  const t = e.target;
+  if(!t.classList || !t.classList.contains("dash-edit")) return;
+  if(applyDashEdit(t)){ scheduleSave(); renderForm(); }
+});
+
 document.getElementById("btnNewProgramme").addEventListener("click", ()=>{ createProgramme(); });
 document.getElementById("btnDuplicateProgramme").addEventListener("click", ()=>{ duplicateProgramme(); });
 document.getElementById("btnDeleteProgramme").addEventListener("click", ()=>{ deleteProgramme(); });
@@ -3694,6 +3817,11 @@ document.getElementById("btnSignOut").addEventListener("click", async ()=>{
   // A shared snapshot renders straight from its embedded data: no network, no login.
   if(STANDALONE){
     document.body.classList.add("readonly");
+    // A "Share as HTML" copy carries no credentials and cannot save, so editing it
+    // would silently lose the recipient's typing. Force the mode off whatever this
+    // browser last had stored for the live dashboard.
+    dashEdit = false;
+    syncDashEditChrome();
     state = mergeState(loadEmbeddedSnapshot() || getDefaultState());
     renderAll();
     initialized = true;
@@ -3703,6 +3831,8 @@ document.getElementById("btnSignOut").addEventListener("click", async ()=>{
     return;
   }
 
+  try{ dashEdit = localStorage.getItem(DASH_EDIT_KEY) === "1"; }catch(err){ dashEdit = false; }
+  syncDashEditChrome();
   setPanelCollapsed(wasCollapsed);
 
   if(!sb){
