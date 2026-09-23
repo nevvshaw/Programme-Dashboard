@@ -182,6 +182,18 @@
   /* An editable dashboard is a working view, never a presented one. */
   @media print{ .dash-edit{border:none !important; padding:0 !important; background:transparent !important;} }
 
+  /* Direct manipulation, only in edit mode. The handles are invisible until the
+     pointer is over the bar so the read-only timeline is unchanged. */
+  #dash.editing .gantt .bar{cursor:grab; user-select:none;}
+  #dash.editing .gantt .bar:hover{box-shadow:0 0 0 2px rgba(255,255,255,.55) inset;}
+  #dash.editing .gantt .bar.dragging{cursor:grabbing; opacity:.85;}
+  .gantt .bar .gh{position:absolute; top:0; bottom:0; width:9px; display:none;}
+  #dash.editing .gantt .bar .gh{display:block;}
+  .gantt .bar .gh.l{left:0; cursor:ew-resize;}
+  .gantt .bar .gh.r{right:0; cursor:ew-resize;}
+  #dash.editing .gantt .bar:hover .gh{background:rgba(255,255,255,.35);}
+  #dash.editing .gantt .lbl-cell input{width:100%;}
+
   .gantt-legend{display:flex; gap:16px; margin-top:12px; font-size:11px; color:var(--muted); flex-wrap:wrap;}
 
   .flow{display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-top:6px;}
@@ -2607,13 +2619,15 @@ function renderGantt(){
   // Track rows (rows 2..N+1)
   state.ganttTracks.forEach((t,ti)=>{
     const r = ti + 2;
-    cells.push(`<div class="lbl-cell" style="grid-row:${r}; grid-column:1;">${esc(t.name)}</div>`);
+    cells.push(`<div class="lbl-cell" style="grid-row:${r}; grid-column:1;">${de(esc(t.name), dInput("ganttTrack", ti, "name", t.name))}</div>`);
     for(let w=1; w<=state.ganttWeeks; w++){
       cells.push(`<div class="cell" style="grid-row:${r}; grid-column:${w+1};"></div>`);
     }
     const s = Math.max(1, Math.min(state.ganttWeeks, parseInt(t.start)||1));
     const e = Math.max(s, Math.min(state.ganttWeeks, parseInt(t.end)||s));
-    cells.push(`<div class="bar" style="grid-row:${r}; grid-column:${s+1} / ${e+2};">${esc(t.name)}</div>`);
+    // data-ti carries the track index so a drag knows what it is moving without
+    // having to work it back out of the grid position.
+    cells.push(`<div class="bar" data-ti="${ti}" style="grid-row:${r}; grid-column:${s+1} / ${e+2};"><span class="gh l"></span>${esc(t.name)}<span class="gh r"></span></div>`);
   });
 
   // Gate row (last row)
@@ -2642,14 +2656,114 @@ function renderGantt(){
     cells.push(`<div class="cell" style="grid-row:${gateRow}; grid-column:${w.week+1}; min-height:22px; background:transparent;">${matches.length?`<div style="text-align:center; font-size:10px; font-weight:700; color:var(--red); line-height:1.4;">${gateLabels}</div>`:""}</div>`);
   });
 
+  // Wrapped so a drag can repaint just the timeline instead of the whole dashboard,
+  // which would be both slower and disruptive mid-interaction.
   return `
+    <div id="ganttWrap">
     <div class="gantt" style="grid-template-columns:190px repeat(${state.ganttWeeks},1fr); grid-template-rows: auto repeat(${state.ganttTracks.length}, 32px) auto;">
       ${cells.join("")}
     </div>
     <div class="gantt-legend">
       <span>▲ Hard gate — the date moves if a gate fails; the gate does not.</span>
+      ${dashEdit ? `<span>Drag a bar to move it; drag its edges to change when it starts or ends.</span>` : ""}
+    </div>
     </div>
   `;
+}
+
+/* Repaint only the timeline. Used after a drag: re-rendering the whole dashboard
+   would be heavier and would also rebuild every other card mid-interaction. */
+function refreshGantt(){
+  const wrap = document.getElementById("ganttWrap");
+  if(wrap) wrap.outerHTML = renderGantt();
+}
+
+/* Drag-to-move and drag-to-resize for the timeline bars.
+
+   Bars are grid items placed with grid-column, so a drag is really just a change
+   of column index: work out the pitch of one week from the rendered grid, convert
+   the pointer's travel into whole weeks, and clamp. The bar's own style is updated
+   live for feedback and state is written once on release, so a drag costs one
+   render rather than one per pointermove. */
+let ganttDrag = null;
+
+function weekPitch(grid){
+  const cells = grid.querySelectorAll('.hcell');
+  if(cells.length >= 2){
+    const a = cells[0].getBoundingClientRect(), b = cells[1].getBoundingClientRect();
+    const pitch = b.left - a.left;
+    if(pitch > 1) return pitch;
+  }
+  return cells.length ? cells[0].getBoundingClientRect().width : 0;
+}
+
+function onGanttPointerDown(e){
+  if(!dashEdit) return;
+  const bar = e.target.closest && e.target.closest('.gantt .bar[data-ti]');
+  if(!bar) return;
+  const grid = bar.closest('.gantt');
+  const pitch = weekPitch(grid);
+  if(!pitch) return;
+  const ti = parseInt(bar.dataset.ti);
+  const t = state.ganttTracks[ti];
+  if(!t) return;
+
+  const handle = e.target.classList && e.target.classList.contains('gh')
+    ? (e.target.classList.contains('l') ? 'l' : 'r') : null;
+
+  ganttDrag = {
+    bar, ti, pitch, handle,
+    startX: e.clientX,
+    origStart: Math.max(1, Math.min(state.ganttWeeks, parseInt(t.start)||1)),
+    origEnd:   Math.max(1, Math.min(state.ganttWeeks, parseInt(t.end)||1)),
+    moved: false
+  };
+  bar.classList.add('dragging');
+  bar.setPointerCapture && bar.setPointerCapture(e.pointerId);
+  e.preventDefault();
+}
+
+function ganttDragPreview(e){
+  if(!ganttDrag) return null;
+  const clamp = (v,lo,hi) => Math.max(lo, Math.min(hi, v));
+  const delta = Math.round((e.clientX - ganttDrag.startX) / ganttDrag.pitch);
+  const span  = ganttDrag.origEnd - ganttDrag.origStart;
+  let s = ganttDrag.origStart, en = ganttDrag.origEnd;
+
+  if(ganttDrag.handle === 'l'){
+    s = clamp(ganttDrag.origStart + delta, 1, ganttDrag.origEnd);
+  }else if(ganttDrag.handle === 'r'){
+    en = clamp(ganttDrag.origEnd + delta, ganttDrag.origStart, state.ganttWeeks);
+  }else{
+    // Moving keeps the bar's length: clamp the start so the whole span stays on screen.
+    s = clamp(ganttDrag.origStart + delta, 1, state.ganttWeeks - span);
+    en = s + span;
+  }
+  if(delta !== 0) ganttDrag.moved = true;
+  return {s, en};
+}
+
+function onGanttPointerMove(e){
+  if(!ganttDrag) return;
+  const pos = ganttDragPreview(e);
+  if(!pos) return;
+  ganttDrag.bar.style.gridColumn = `${pos.s+1} / ${pos.en+2}`;
+}
+
+function onGanttPointerUp(e){
+  if(!ganttDrag) return;
+  const pos = ganttDragPreview(e);
+  const d = ganttDrag;
+  d.bar.classList.remove('dragging');
+  ganttDrag = null;
+  if(!pos || !d.moved) return;          // a plain click must not count as an edit
+  const t = state.ganttTracks[d.ti];
+  if(!t) return;
+  t.start = pos.s;
+  t.end = pos.en;
+  scheduleSave();
+  renderForm();                          // keep the panel's week dropdowns in step
+  refreshGantt();
 }
 
 
@@ -3773,6 +3887,10 @@ function applyDashEdit(t){
 }
 
 const dashEl = document.getElementById("dash");
+dashEl.addEventListener("pointerdown", onGanttPointerDown);
+dashEl.addEventListener("pointermove", onGanttPointerMove);
+dashEl.addEventListener("pointerup", onGanttPointerUp);
+dashEl.addEventListener("pointercancel", ()=>{ if(ganttDrag){ ganttDrag.bar.classList.remove('dragging'); ganttDrag = null; refreshGantt(); } });
 dashEl.addEventListener("input", e=>{
   const t = e.target;
   if(!t.classList || !t.classList.contains("dash-edit")) return;
