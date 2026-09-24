@@ -173,6 +173,15 @@
   .gantt .bar{background:var(--gantt-bar); border-radius:4px; height:26px; align-self:center; display:flex; align-items:center; padding:0 8px; color:#fff; font-size:10.5px; font-weight:700; white-space:nowrap; overflow:hidden; position:relative; z-index:1;}
   /* Inline editing on the dashboard. Compact so an editable table stays the same
      shape as the read-only one — switching modes must not reflow the page. */
+  #wordImportPreview{margin-top:10px;}
+  .wi-row{border:1px solid var(--border); border-radius:6px; padding:8px 10px; margin-bottom:6px; background:#FCFCFE; font-size:12px;}
+  .wi-row .wi-h{font-weight:700; color:var(--navy);}
+  .wi-row .wi-d{color:var(--muted); font-size:11.5px; margin-top:2px;}
+  .wi-row.skip{opacity:.55;}
+  .wi-actions{display:flex; gap:8px; margin-top:8px;}
+  .wi-msg{font-size:11.5px; margin-top:6px;}
+  .wi-msg.err{color:var(--red);}
+
   .dash-edit{font-family:inherit; font-size:12px; padding:3px 5px; border:1px solid var(--border);
     border-radius:4px; background:#fff; color:var(--ink); width:100%; max-width:100%;}
   .dash-edit:focus{outline:2px solid var(--sky); outline-offset:1px; border-color:var(--sky);}
@@ -436,6 +445,9 @@
         <input type="text" id="f-customer" placeholder="e.g. Cyderes">
         <label for="f-programmeName">Programme</label>
         <input type="text" id="f-programmeName">
+        <label for="f-overallRag">Overall readiness</label>
+        <select id="f-overallRag"></select>
+        <p class="hint" style="margin:3px 0 10px;">Normally worked out from the readiness scorecard. Override it when your judgement of the programme differs from the sum of its areas.</p>
         <label for="f-periodName">Period</label>
         <input type="text" id="f-periodName" placeholder="e.g. Steering Review · Week commencing 6 Jul 2026">
       </div>
@@ -452,6 +464,13 @@
           <button class="btn-mini" id="btnGrantAccess" style="flex-shrink:0;">Add</button>
         </div>
         <p class="hint" id="accessMsg" style="margin-top:8px; min-height:1em;"></p>
+      </div>
+
+      <div class="field-group" id="wordImportGroup">
+        <h2>Import from Word</h2>
+        <p class="hint" style="margin-bottom:10px;">Reads a .docx and lifts its tables in. Headings that match a section feed it; anything else becomes a new section. Nothing is deleted or overwritten — rows are added.</p>
+        <input type="file" id="wordFileInput" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document">
+        <div id="wordImportPreview"></div>
       </div>
 
       <div class="field-group">
@@ -597,6 +616,9 @@
      fails to load (no network), the trend chart's canvas is simply left empty —
      nothing else on the page depends on it. -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<!-- Word import. Converts .docx to HTML in the browser so headings, tables and
+     lists survive; the mapping below reads that HTML rather than raw OOXML. -->
+<script src="https://cdn.jsdelivr.net/npm/mammoth@1.8.0/mammoth.browser.min.js"></script>
 
 <script id="appScript">
 /* ==================== Supabase configuration ==================== */
@@ -881,6 +903,9 @@ function getDefaultState(){ return normaliseRefs({
      dashboards column so grouping the picker needs no schema change; every
      programme for one client simply carries the same value. */
   customer:"",
+  /* "" = derive from the readiness scorecard, as it always did. "g"/"a"/"r" =
+     someone has judged it differently and said so explicitly. */
+  overallRagOverride:"",
   generatedAt:"2026-07-27T15:30:00Z"
 });}
 
@@ -1217,6 +1242,8 @@ function mergeState(parsed){
   // all; normalise to "" so the picker can group them as unassigned rather than
   // printing "undefined".
   merged.customer = typeof merged.customer === "string" ? merged.customer : "";
+  // Anything that isn't a RAG letter means "derive it".
+  merged.overallRagOverride = ["g","a","r"].includes(merged.overallRagOverride) ? merged.overallRagOverride : "";
   // Backfill reference numbers. Saves made before refs existed hold assumptions
   // and dependencies as plain strings and carry no refs at all; this lifts them
   // to the current shape and issues numbers without disturbing any already set.
@@ -2267,6 +2294,8 @@ function renderWorkstreamRows(){
           </select>
         </div>
       </div>
+      <label>Completion date</label>
+      <input type="date" data-field="completionDate" data-type="workstream" data-i="${i}" value="${esc(w.completionDate||"")}">
       <label>Next milestone</label>
       <input type="text" data-field="milestone" data-type="workstream" data-i="${i}" value="${esc(w.milestone||"")}">
       <label>Commentary</label>
@@ -2470,6 +2499,15 @@ function weekOpts(){
   return Array.from({length: state.ganttWeeks}, (_, i) => i+1);
 }
 function renderGanttEditRows(){
+  const ragSel = document.getElementById("f-overallRag");
+  if(ragSel){
+    // The Auto option names the scorecard's current verdict, so the effect of
+    // choosing it is visible before you choose it.
+    ragSel.innerHTML =
+      `<option value="">Auto — ${esc(RAG_LABEL[overallRagFromReadiness()])}</option>` +
+      [["g","Green"],["a","Amber"],["r","Red"]].map(([v,l])=>`<option value="${v}">${l}</option>`).join("");
+    ragSel.value = ["g","a","r"].includes(state.overallRagOverride) ? state.overallRagOverride : "";
+  }
   document.getElementById("f-customer").value = state.customer || "";
   document.getElementById("f-programmeName").value = state.header.programme || "";
   document.getElementById("f-periodName").value = state.header.period || "";
@@ -2602,6 +2640,14 @@ function overallRagFromReadiness(){
   const hasRed = state.readiness.some(r=>r.rag==="r");
   const hasAmber = state.readiness.some(r=>r.rag==="a");
   return hasRed ? "r" : (hasAmber ? "a" : "g");
+}
+
+/* What the badge actually shows: the manual call if one has been made, otherwise
+   the scorecard's own verdict. */
+function effectiveOverallRag(){
+  return ["g","a","r"].includes(state.overallRagOverride)
+    ? state.overallRagOverride
+    : overallRagFromReadiness();
 }
 
 function computeGanttWeeks(){
@@ -2842,8 +2888,10 @@ function ragMoveTag(row){
 
 /* Due date for a custom-table row. A date that has passed is only overdue while the
    row is still open — a completed action that ran late is history, not an action. */
-function dueCell(row, today){
-  const raw = row && row.due;
+/* `field` lets this serve any date column — custom rows use `due`, workstreams
+   use `completionDate` — so the overdue and due-soon styling stays in one place. */
+function dueCell(row, today, field){
+  const raw = row && row[field || "due"];
   if(!raw) return `<span style="color:var(--muted);">—</span>`;
   const due = new Date(raw + "T00:00:00");
   if(isNaN(due.getTime())) return `<span style="color:var(--muted);">—</span>`;
@@ -2879,7 +2927,12 @@ function renderDashboard(){
   const goLive = state.goLiveDate ? new Date(state.goLiveDate+"T00:00:00") : null;
   const daysToGoLive = goLive ? daysBetween(today, goLive) : null;
 
-  const overallRag = overallRagFromReadiness();
+  const derivedRag = overallRagFromReadiness();
+  const overallRag = effectiveOverallRag();
+  const ragIsManual = ["g","a","r"].includes(p.overallRagOverride);
+  // Only worth flagging when the manual call disagrees with the evidence — an
+  // override that merely restates what the scorecard already says is not news.
+  const ragDisagrees = ragIsManual && overallRag !== derivedRag;
 
   const readinessFiltered = p.filters.readiness === "all" ? p.readiness : p.readiness.filter(r=>r.rag===p.filters.readiness);
   const riskFiltered = p.filters.risk === "all" ? p.risks : p.risks.filter(r=>r.impact===p.filters.risk);
@@ -3106,7 +3159,7 @@ function renderDashboard(){
         ${p.workstreams.length ? `<span class="rag-badge ${p.workstreams.some(w=>w.rag==="r")?"r":p.workstreams.some(w=>w.rag==="a")?"a":"g"}"><span class="dot"></span>${p.workstreams.filter(w=>(w.progress||"notstarted")==="completed").length} of ${p.workstreams.length} complete</span>` : ""}
       </div>
       <table>
-        <thead><tr><th style="width:44px;">Ref</th><th>Workstream</th><th>Lead</th><th>RAG</th><th>Status</th><th style="width:110px;">Progress</th><th>Next milestone</th><th>Commentary</th></tr></thead>
+        <thead><tr><th style="width:44px;">Ref</th><th>Workstream</th><th>Lead</th><th>RAG</th><th>Status</th><th style="width:110px;">Progress</th><th>Completion date</th><th>Next milestone</th><th>Commentary</th></tr></thead>
         <tbody>
           ${p.workstreams.length ? p.workstreams.map((w,i)=>{
             const pcNum = Math.max(0, Math.min(100, Number(w.percent)||0));
@@ -3124,10 +3177,11 @@ function renderDashboard(){
                   </div>
                   <span style="font-size:11px; font-weight:700; color:var(--muted);">${pcNum}%</span>
                 </div>`, dInput("workstream", i, "percent", pcNum, "number"))}</td>
+              <td>${de(dueCell(w, today, "completionDate"), dInput("workstream", i, "completionDate", w.completionDate||"", "date"))}</td>
               <td>${de(esc(w.milestone||""), dInput("workstream", i, "milestone", w.milestone||""))}</td>
               <td>${de(esc(w.commentary||""), dArea("workstream", i, "commentary", w.commentary||""))}</td>
             </tr>`;
-          }).join("") : `<tr><td colspan="8" class="empty-note">No workstreams yet. Add them in the edit panel.</td></tr>`}
+          }).join("") : `<tr><td colspan="9" class="empty-note">No workstreams yet. Add them in the edit panel.</td></tr>`}
         </tbody>
       </table>
     </div>`,
@@ -3305,7 +3359,16 @@ function renderDashboard(){
         <h2>${esc(p.header.programme)}</h2>
         <p>${esc(p.header.period)} · Target go-live: ${goLive ? fmtDate(goLive) : "—"}</p>
       </div>
-      <span class="rag-badge ${overallRag}" data-overall-rag-badge><span class="dot"></span>Overall readiness: ${RAG_LABEL[overallRag]}</span>
+      ${de(
+        `<span class="rag-badge ${overallRag}" data-overall-rag-badge title="${ragIsManual ? `Set manually.${ragDisagrees ? ` The readiness scorecard says ${RAG_LABEL[derivedRag]}.` : ""}` : "Derived from the readiness scorecard."}"><span class="dot"></span>Overall readiness: ${RAG_LABEL[overallRag]}${ragDisagrees ? ` <span style="font-weight:400; opacity:.75;">(set manually)</span>` : ""}</span>`,
+        `<span class="rag-badge ${overallRag}" data-overall-rag-badge><span class="dot"></span>Overall readiness:
+           <select class="dash-edit" data-dstate="overallRagOverride" style="width:auto; margin-left:6px;">
+             <option value="" ${!ragIsManual?"selected":""}>Auto — ${RAG_LABEL[derivedRag]}</option>
+             <option value="g" ${p.overallRagOverride==="g"?"selected":""}>Green</option>
+             <option value="a" ${p.overallRagOverride==="a"?"selected":""}>Amber</option>
+             <option value="r" ${p.overallRagOverride==="r"?"selected":""}>Red</option>
+           </select></span>`
+      )}
     </div>
 
     ${orderedSections}
@@ -3425,6 +3488,12 @@ function renderAll(){ renderForm(); renderDashboard(); }
 
 /* ==================== Event wiring ==================== */
 document.getElementById("goLiveDate").addEventListener("change", e=>{ state.goLiveDate = e.target.value; renderDashboard(); });
+document.getElementById("wordFileInput").addEventListener("change", e=>{
+  const f = e.target.files && e.target.files[0];
+  wiHandleFile(f);
+  e.target.value = "";   // so the same file can be picked again after a cancel
+});
+document.getElementById("f-overallRag").addEventListener("change", e=>{ state.overallRagOverride = e.target.value; renderDashboard(); });
 document.getElementById("f-customer").addEventListener("input", e=>{ state.customer = e.target.value; scheduleSave(); });
 document.getElementById("f-programmeName").addEventListener("input", e=>{ state.header.programme = e.target.value; renderDashboard(); });
 document.getElementById("f-periodName").addEventListener("input", e=>{ state.header.period = e.target.value; renderDashboard(); });
@@ -3708,7 +3777,7 @@ panel.addEventListener("click", e=>{
     const arr = state[ARR_MAP[type]];
     if(type==="readiness") arr.push({area:"New area", rag:"a", evidence:"", mustClear:"", owner:""});
     if(type==="action") arr.push({seq:arr.length+1, title:"New action", desc:"", status:"notstarted", rag:"g"});
-    if(type==="workstream") arr.push({ref:nextRef("workstreams"), name:"", lead:"", rag:"a", progress:"notstarted", percent:0, milestone:"", commentary:""});
+    if(type==="workstream") arr.push({ref:nextRef("workstreams"), name:"", lead:"", rag:"a", progress:"notstarted", percent:0, completionDate:"", milestone:"", commentary:""});
     if(type==="stakeholder") arr.push({ref:nextRef("stakeholders"), name:"", role:"", org:"", influence:"Medium", engagement:"a", contact:"", notes:""});
     if(type==="risk") arr.push({ref:nextRef("risks"), risk:"", impact:"Medium", mitigation:""});
     if(type==="issue") arr.push({ref:nextRef("issues"), issue:"", sev:"P2", rag:"r", progress:"notstarted", action:"", comments:""});
@@ -3764,6 +3833,319 @@ panel.addEventListener("click", e=>{
     renderForm(); renderDashboard();
   }
 });
+
+/* ==================== Word import ====================
+   A .docx is converted to HTML by mammoth, then walked heading by heading. A
+   heading whose text matches a section feeds that section; anything else becomes
+   a new custom section, which is the point of the feature — the document decides
+   what sections exist, not this file.
+
+   Nothing is ever removed: rows are appended and sections added. A version
+   snapshot is taken before anything is written, so an import is undoable. */
+
+/* Headings arrive as "5. Action Log" or "Risks & Live Issues". Strip the
+   numbering and punctuation so both land on the same key. */
+function wiNorm(t){
+  return String(t||"")
+    .replace(/^[\s\d]+[.)]\s*/, "")
+    .toLowerCase()
+    .replace(/&/g, " and ")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+/* Which built-in section a heading means. Matched on a contains basis so
+   "Risks and Live Issues" still finds risks. */
+const WI_SECTION_MATCH = [
+  ["workstreams",   ["workstream"]],
+  ["stakeholders",  ["stakeholder"]],
+  ["defects",       ["defect"]],
+  ["risks",         ["risk"]],
+  ["issues",        ["issue"]],
+  ["decisions",     ["decision"]],
+  ["assumptions",   ["assumption"]],
+  ["dependencies",  ["dependency", "dependencies"]],
+  ["readiness",     ["readiness", "scorecard"]]
+];
+function wiMatchSection(heading){
+  const n = wiNorm(heading);
+  if(!n) return null;
+  for(const [key, needles] of WI_SECTION_MATCH){
+    if(needles.some(x => n.includes(x))) return key;
+  }
+  return null;
+}
+
+/* Column header -> field, per section. First match wins, so put the more
+   specific synonyms first. */
+const WI_FIELDS = {
+  risks:        [["risk",["risk","description","title"]],["impact",["impact","severity","priority"]],["mitigation",["mitigation","action","response","plan"]]],
+  issues:       [["issue",["issue","description","title"]],["sev",["sev","severity","priority"]],["rag",["rag"]],["progress",["status","progress"]],["action",["action","owner","resolution"]],["comments",["comment","note"]]],
+  defects:      [["defectNo",["defect no","defect","number","id","ref"]],["description",["description","summary","title"]],["severity",["sev","severity","priority"]],["owner",["owner","assignee"]],["comments",["comment","note"]],["resolutionDate",["resolution","target","due","date"]]],
+  decisions:    [["title",["decision","title","item"]],["detail",["detail","description","note","purpose"]],["status",["status","outcome"]]],
+  workstreams:  [["name",["workstream","name","title"]],["lead",["lead","owner"]],["percent",["percent","complete","progress %"]],["rag",["rag"]],["progress",["status","progress"]],["completionDate",["completion","target","due","date"]],["milestone",["milestone","next"]],["commentary",["commentary","comment","note"]]],
+  stakeholders: [["name",["stakeholder","name"]],["role",["role","title","position"]],["org",["organisation","organization","company","org"]],["influence",["influence","power"]],["engagement",["engagement","attitude","support"]],["contact",["contact","email"]],["notes",["note","comment"]]],
+  readiness:    [["area",["area","workstream","topic"]],["rag",["rag","status"]],["evidence",["evidence","detail","finding"]],["mustClear",["must clear","action","to clear","required"]],["owner",["owner","lead"]]],
+  custom:       [["item",["action","item","task","description","title","activity"]],["owner",["owner","assignee","lead","responsible"]],["detail",["note","detail","purpose","comment","outcome"]],["status",["rag"]],["progress",["status","progress"]],["due",["due","target","date","deadline"]]]
+};
+
+function wiPickField(header, spec){
+  const n = wiNorm(header);
+  if(!n) return null;
+  for(const [field, needles] of spec){
+    if(needles.some(x => n.includes(x))) return field;
+  }
+  return null;
+}
+
+/* Word writes "Green", "In Progress", "12/03/2026". State wants "g",
+   "inprogress", "2026-03-12". */
+function wiRag(v){
+  const n = wiNorm(v);
+  if(!n) return "";
+  if(n.startsWith("g") || n.includes("green") || n.includes("on track")) return "g";
+  if(n.startsWith("a") || n.includes("amber") || n.includes("at risk")) return "a";
+  if(n.startsWith("r") || n.includes("red")) return "r";
+  return "";
+}
+function wiProgress(v){
+  const n = wiNorm(v);
+  if(!n) return "";
+  if(n.includes("complete") || n.includes("done") || n.includes("closed")) return "completed";
+  if(n.includes("hold")) return "onhold";
+  if(n.includes("progress") || n.includes("started") || n.includes("wip")) return "inprogress";
+  if(n.includes("not started") || n.includes("open") || n.includes("to do")) return "notstarted";
+  return "";
+}
+function wiImpact(v){
+  const n = wiNorm(v);
+  if(n.includes("high")) return "High";
+  if(n.includes("low")) return "Low";
+  if(n.includes("med")) return "Medium";
+  return "";
+}
+function wiSeverity(v){
+  const m = String(v||"").match(/p\s*([123])/i);
+  if(m) return "P" + m[1];
+  const n = wiNorm(v);
+  if(n.includes("critical") || n.includes("high")) return "P1";
+  if(n.includes("low")) return "P3";
+  if(n.includes("med")) return "P2";
+  return "";
+}
+/* Accepts 12/03/2026, 12-03-2026, 2026-03-12 and "12 Mar 2026". Day-first,
+   because these documents are written in the UK. */
+function wiDate(v){
+  const raw = String(v||"").trim();
+  if(!raw) return "";
+  let m = raw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if(m) return `${m[1]}-${String(m[2]).padStart(2,"0")}-${String(m[3]).padStart(2,"0")}`;
+  m = raw.match(/^(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{2,4})$/);
+  if(m){
+    const y = m[3].length === 2 ? "20"+m[3] : m[3];
+    return `${y}-${String(m[2]).padStart(2,"0")}-${String(m[1]).padStart(2,"0")}`;
+  }
+  const d = new Date(raw);
+  if(!isNaN(d.getTime()) && /\d/.test(raw)){
+    const pad = n => String(n).padStart(2,"0");
+    return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+  }
+  return "";
+}
+
+function wiCoerce(section, field, value){
+  const v = String(value||"").trim();
+  // Custom table rows call their RAG column "status", built-in sections call it
+  // "rag", and stakeholders call it "engagement" — all three are RAG letters.
+  if(field === "rag" || field === "engagement") return wiRag(v);
+  if(field === "status" && section === "custom") return wiRag(v) || "a";
+  if(field === "progress") return wiProgress(v) || "notstarted";
+  if(field === "impact" || field === "influence") return wiImpact(v) || "Medium";
+  if(field === "sev" || field === "severity") return wiSeverity(v) || "P2";
+  if(field === "percent") { const n = parseInt(v.replace(/[^\d]/g,""),10); return isNaN(n) ? 0 : Math.max(0,Math.min(100,n)); }
+  if(field === "completionDate" || field === "resolutionDate" || field === "due") return wiDate(v);
+  return v;
+}
+
+/* Read the document into a flat list of {heading, kind, rows|items}. */
+function wiParseHtml(html){
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  const blocks = [];
+  let current = null;
+  const push = () => { if(current && (current.rows.length || current.items.length)) blocks.push(current); };
+
+  [...doc.body.children].forEach(el=>{
+    const tag = el.tagName.toLowerCase();
+    if(/^h[1-4]$/.test(tag)){
+      push();
+      current = { heading: el.textContent.trim(), rows: [], items: [], headers: [] };
+      return;
+    }
+    if(!current) current = { heading: "", rows: [], items: [], headers: [] };
+    if(tag === "table"){
+      const trs = [...el.querySelectorAll("tr")];
+      if(!trs.length) return;
+      const headers = [...trs[0].children].map(c=>c.textContent.trim());
+      const body = trs.slice(1).map(tr=>[...tr.children].map(c=>c.textContent.trim()))
+                       .filter(cells=>cells.some(c=>c));
+      if(body.length){ current.headers = headers; current.rows = current.rows.concat(body); }
+      return;
+    }
+    if(tag === "ul" || tag === "ol"){
+      [...el.querySelectorAll("li")].forEach(li=>{
+        const t = li.textContent.trim();
+        if(t) current.items.push(t);
+      });
+      return;
+    }
+    if(tag === "p"){
+      const t = el.textContent.trim();
+      if(t) current.items.push(t);
+    }
+  });
+  push();
+  return blocks;
+}
+
+/* Decide what each block becomes, without changing anything yet. */
+function wiPlan(blocks){
+  return blocks.map(b=>{
+    const target = wiMatchSection(b.heading);
+    if(b.rows.length){
+      if(target && WI_FIELDS[target]){
+        const spec = WI_FIELDS[target];
+        const map = b.headers.map(h=>wiPickField(h, spec));
+        if(map.some(Boolean)){
+          return {block:b, kind:"section", target, map,
+                  note:`${b.rows.length} row${b.rows.length===1?"":"s"} into ${SECTION_LABELS[target]||target}`};
+        }
+      }
+      const map = b.headers.map(h=>wiPickField(h, WI_FIELDS.custom));
+      return {block:b, kind:"customTable", title:b.heading || "Imported table", map,
+              note:`${b.rows.length} row${b.rows.length===1?"":"s"} into a new table section`};
+    }
+    if(b.items.length){
+      if(target === "assumptions" || target === "dependencies"){
+        return {block:b, kind:"stringList", target,
+                note:`${b.items.length} item${b.items.length===1?"":"s"} into ${SECTION_LABELS[target]||target}`};
+      }
+      return {block:b, kind:"customList", title:b.heading || "Imported notes",
+              note:`${b.items.length} item${b.items.length===1?"":"s"} into a new list section`};
+    }
+    return {block:b, kind:"skip", note:"nothing to import"};
+  }).filter(p=>p.kind !== "skip" || false);
+}
+
+/* Apply the plan. Append only. */
+function wiApply(plan){
+  let added = 0, sectionsCreated = 0;
+  plan.forEach(p=>{
+    if(p.kind === "section"){
+      const spec = WI_FIELDS[p.target];
+      p.block.rows.forEach(cells=>{
+        const row = {};
+        p.map.forEach((field, i)=>{ if(field) row[field] = wiCoerce(p.target, field, cells[i]); });
+        spec.forEach(([field])=>{ if(!(field in row)) row[field] = wiCoerce(p.target, field, ""); });
+        if(REF_TYPES[p.target]) row.ref = nextRef(p.target);
+        state[p.target].push(row);
+        added++;
+      });
+    }else if(p.kind === "stringList"){
+      p.block.items.forEach(t=>{
+        state[p.target].push({ref: nextRef(p.target), text: t});
+        added++;
+      });
+    }else if(p.kind === "customTable"){
+      const rows = p.block.rows.map(cells=>{
+        const row = {item:"", status:"a", progress:"notstarted", detail:"", owner:"", due:""};
+        p.map.forEach((field, i)=>{ if(field) row[field] = wiCoerce("custom", field, cells[i]); });
+        if(!row.status) row.status = "a";
+        if(!row.progress) row.progress = "notstarted";
+        return row;
+      });
+      state.customSections.push({id: Date.now() + sectionsCreated, type:"table", title:p.title, rows});
+      sectionsCreated++; added += rows.length;
+    }else if(p.kind === "customList"){
+      state.customSections.push({id: Date.now() + sectionsCreated, type:"list", title:p.title, items:p.block.items.slice()});
+      sectionsCreated++; added += p.block.items.length;
+    }
+  });
+  // A section created by an import has to be switched on, or it lands invisible.
+  if(sectionsCreated && Array.isArray(state.hiddenSections)){
+    state.hiddenSections = state.hiddenSections.filter(id => id !== "customSections");
+  }
+  return {added, sectionsCreated};
+}
+
+let wiPending = null;
+
+function wiRenderPreview(plan, msg, isError){
+  const el = document.getElementById("wordImportPreview");
+  if(!el) return;
+  if(msg && !plan){
+    el.innerHTML = `<p class="wi-msg ${isError?"err":""}">${esc(msg)}</p>`;
+    return;
+  }
+  // A meeting-notes document can easily carry eight headings. Importing all of
+  // them when you wanted one is worse than not having the feature, so each block
+  // is opt-out and the count follows the ticks.
+  const total = sel => plan.filter((_,i)=>sel[i]).reduce((n,p)=>n+(p.block.rows.length||p.block.items.length),0);
+  const selected = plan.map(()=>true);
+  const paint = () => {
+    el.innerHTML =
+      plan.map((p,i)=>`
+        <label class="wi-row ${selected[i]?"":"skip"}" style="display:flex; gap:8px; align-items:flex-start; cursor:pointer;">
+          <input type="checkbox" data-wi="${i}" ${selected[i]?"checked":""} style="margin-top:2px;">
+          <span><span class="wi-h">${esc(p.block.heading || "(untitled)")}</span><div class="wi-d">${esc(p.note)}</div></span>
+        </label>`).join("")
+      + `<div class="wi-actions">
+           <button class="btn-mini" id="wiApply" ${total(selected)?"":"disabled"}>Import ${total(selected)} rows</button>
+           <button class="btn-mini" id="wiCancel">Cancel</button>
+         </div>`;
+    el.querySelectorAll("[data-wi]").forEach(cb=>{
+      cb.addEventListener("change", ()=>{ selected[parseInt(cb.dataset.wi)] = cb.checked; paint(); });
+    });
+    wireButtons();
+  };
+  const wireButtons = () => {
+  document.getElementById("wiApply").addEventListener("click", async ()=>{
+    const chosen = plan.filter((_,i)=>selected[i]);
+    if(!chosen.length) return;
+    await addVersionSnapshot("Auto-backup before Word import");
+    const res = wiApply(chosen);
+    wiPending = null;
+    renderForm(); renderDashboard();
+    await saveState();
+    wiRenderPreview(null, `Imported ${res.added} row${res.added===1?"":"s"}${res.sectionsCreated?`, creating ${res.sectionsCreated} new section${res.sectionsCreated===1?"":"s"}`:""}. A snapshot was saved to Version history first.`, false);
+  });
+  document.getElementById("wiCancel").addEventListener("click", ()=>{ wiPending = null; wiRenderPreview(null, "", false); });
+  };
+  paint();
+}
+
+async function wiHandleFile(file){
+  if(!file) return;
+  if(typeof mammoth === "undefined"){
+    wiRenderPreview(null, "The Word reader did not load. Check your connection and reload.", true);
+    return;
+  }
+  wiRenderPreview(null, "Reading " + file.name + "…", false);
+  try{
+    const buf = await file.arrayBuffer();
+    const result = await mammoth.convertToHtml({arrayBuffer: buf});
+    const blocks = wiParseHtml(result.value || "");
+    const plan = wiPlan(blocks);
+    if(!plan.length){
+      wiRenderPreview(null, "Nothing to import — no tables, lists or headed content found in that document.", true);
+      return;
+    }
+    wiPending = plan;
+    wiRenderPreview(plan);
+  }catch(err){
+    console.error("Word import failed:", err);
+    wiRenderPreview(null, "Could not read that file. Make sure it is a .docx (not .doc).", true);
+  }
+}
 
 /* ==================== Auth ==================== */
 let currentUser = null;
@@ -3890,6 +4272,11 @@ document.getElementById("btnDashEdit").addEventListener("click", ()=>{ setDashEd
    derived (KPI tiles, roll-up badges, overall RAG) refreshes when edit mode is
    switched off, which re-renders once. */
 function applyDashEdit(t){
+  // A handful of editors drive a top-level field rather than a row in a list.
+  if(t.dataset.dstate){
+    state[t.dataset.dstate] = t.value;
+    return true;
+  }
   if(t.dataset.dsec !== undefined){
     const sec = state.customSections[parseInt(t.dataset.dsec)];
     if(!sec) return false;
