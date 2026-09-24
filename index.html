@@ -182,6 +182,19 @@
   .wi-msg{font-size:11.5px; margin-top:6px;}
   .wi-msg.err{color:var(--red);}
 
+  /* Occasional actions live behind one button so the weekly ones are findable. */
+  .tb-menu{position:relative;}
+  .tb-menu-panel{position:absolute; right:0; top:calc(100% + 6px); z-index:60; min-width:210px;
+    background:var(--paper); border:1px solid var(--border); border-radius:8px; padding:6px;
+    box-shadow:0 8px 24px rgba(0,0,0,.22); display:none;}
+  .tb-menu.open .tb-menu-panel{display:block;}
+  .tb-menu-panel button{display:block; width:100%; text-align:left; background:none; border:none;
+    font-family:inherit; font-size:12.5px; font-weight:600; color:var(--ink); padding:8px 10px;
+    border-radius:5px; cursor:pointer;}
+  .tb-menu-panel button:hover{background:var(--sky-pale);}
+  .tb-menu-panel hr{border:none; border-top:1px solid var(--border); margin:5px 2px;}
+  .tb-menu-panel button.danger{color:#B2364A;}
+
   .dash-edit{font-family:inherit; font-size:12px; padding:3px 5px; border:1px solid var(--border);
     border-radius:4px; background:#fff; color:var(--ink); width:100%; max-width:100%;}
   .dash-edit:focus{outline:2px solid var(--sky); outline-offset:1px; border-color:var(--sky);}
@@ -417,17 +430,24 @@
     </div>
     <span id="userChip" class="user-chip"></span>
     <span id="saveStatus" class="save-status"></span>
+    <button class="btn primary" id="btnDashEdit" title="Edit the dashboard sections in place, without opening the input panel">Edit on dashboard</button>
     <button class="btn" id="btnSaveNow">Save now</button>
     <button class="btn" id="btnSaveVersion">Save weekly version</button>
-    <button class="btn" id="btnExport">Export data</button>
-    <button class="btn" id="btnImport">Import data</button>
-    <input type="file" id="importFileInput" accept="application/json,.json" style="display:none;">
-    <button class="btn primary" id="btnExportHtml" title="Download a single HTML file with today's data baked in — anyone can open it, no import needed">Share as HTML</button>
-    <button class="btn" id="btnDashEdit" title="Edit the dashboard sections in place, without opening the input panel">Edit on dashboard</button>
     <button class="btn" id="btnTogglePanel">Hide inputs</button>
-    <button class="btn" id="btnReset">Reset to deck data</button>
-    <button class="btn primary" id="btnPrint">Print / Save PDF</button>
-    <button class="btn" id="btnSignOut">Sign out</button>
+    <button class="btn" id="btnPrint">Print / Save PDF</button>
+    <input type="file" id="importFileInput" accept="application/json,.json" style="display:none;">
+    <div class="tb-menu" id="tbMenu">
+      <button class="btn" id="btnMore" aria-haspopup="true" aria-expanded="false" title="Export, import and other occasional actions">⋯ More</button>
+      <div class="tb-menu-panel" role="menu">
+        <button id="btnImportWord">Import from Word…</button>
+        <button id="btnImport">Import data (JSON)</button>
+        <button id="btnExport">Export data</button>
+        <button id="btnExportHtml">Share as HTML</button>
+        <hr>
+        <button id="btnReset">Reset to deck data</button>
+        <button id="btnSignOut" class="danger">Sign out</button>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -4263,6 +4283,41 @@ document.getElementById("authForm").addEventListener("submit", async (e)=>{
 
 document.getElementById("dashboardSelect").addEventListener("change", e=>{ openDashboard(e.target.value); });
 document.getElementById("btnNewDashboard").addEventListener("click", ()=>{ createDashboard(); });
+/* ---- Top-bar overflow menu ---- */
+function tbMenuSet(open){
+  const m = document.getElementById("tbMenu");
+  if(!m) return;
+  m.classList.toggle("open", open);
+  const b = document.getElementById("btnMore");
+  if(b) b.setAttribute("aria-expanded", open ? "true" : "false");
+}
+document.getElementById("btnMore").addEventListener("click", e=>{
+  e.stopPropagation();
+  tbMenuSet(!document.getElementById("tbMenu").classList.contains("open"));
+});
+// Anything chosen from the menu closes it, as does clicking away or pressing Escape.
+document.querySelector("#tbMenu .tb-menu-panel").addEventListener("click", ()=> tbMenuSet(false));
+document.addEventListener("click", e=>{
+  const m = document.getElementById("tbMenu");
+  if(m && m.classList.contains("open") && !m.contains(e.target)) tbMenuSet(false);
+});
+document.addEventListener("keydown", e=>{ if(e.key === "Escape") tbMenuSet(false); });
+
+/* The Word importer's UI lives in the edit panel because it needs room for a
+   preview, which made it the third of nineteen form groups and effectively
+   invisible. This is the way in: show the panel, scroll to the group, open the
+   file picker. */
+document.getElementById("btnImportWord").addEventListener("click", ()=>{
+  const layout = document.getElementById("layoutRoot");
+  if(layout && layout.classList.contains("collapsed")) setPanelCollapsed(false);
+  const group = document.getElementById("wordImportGroup");
+  const panel = document.querySelector(".panel");
+  if(group && panel) panel.scrollTop = Math.max(0, group.offsetTop - 12);
+  if(group) group.style.outline = "2px solid var(--sky)";
+  setTimeout(()=>{ if(group) group.style.outline = ""; }, 1600);
+  document.getElementById("wordFileInput").click();
+});
+
 document.getElementById("btnDashEdit").addEventListener("click", ()=>{ setDashEdit(!dashEdit); });
 
 /* Inline editing writes straight to state and never re-renders the dashboard while
@@ -4469,60 +4524,4 @@ document.getElementById("importFileInput").addEventListener("change", (e)=>{
 
 /* Share as HTML — bundles the current data into a standalone copy of this
    dashboard file, so a teammate can just open it (no import step, no shared
-   browser storage needed) and see this exact snapshot. They can keep editing
-   their copy independently from then on. */
-document.getElementById("btnExportHtml").addEventListener("click", ()=>{
-  // Build/replace the snapshot as a real DOM node rather than via string search-
-  // and-replace: our own source code (this very handler) contains the text
-  // 'id="embeddedSnapshot"' as a string literal, which would falsely match a
-  // naive text search and corrupt the main script when replaced. Manipulating
-  // the actual DOM and letting the browser serialize it sidesteps that entirely.
-  const existing = document.getElementById("embeddedSnapshot");
-  if(existing) existing.remove();
-  const snapshotEl = document.createElement("script");
-  snapshotEl.id = "embeddedSnapshot";
-  snapshotEl.type = "application/json";
-  snapshotEl.textContent = JSON.stringify(state).replace(/</g, "\\u003c");
-  // Must be parsed *before* the app script runs (script tags execute as the
-  // parser reaches them), otherwise init() looks for #embeddedSnapshot before
-  // it exists in the DOM and silently finds nothing.
-  const appScript = document.getElementById("appScript");
-  document.body.insertBefore(snapshotEl, appScript);
-
-  // Marks the export as a standalone copy: the app reads this at startup and skips
-  // Supabase and the login gate entirely, rendering the snapshot read-only. Without
-  // it the recipient would be asked to sign in to an account they don't have.
-  const flagEl = document.createElement("script");
-  flagEl.id = "standaloneFlag";
-  flagEl.type = "application/json";
-  flagEl.textContent = "1";
-  document.body.insertBefore(flagEl, appScript);
-
-  // This file is deliberately sent to people outside the programme, and outerHTML
-  // serializes whatever is currently in the DOM — including the signed-in user's email
-  // address in the topbar. Blank it, and drop the login form, before serializing.
-  const userChip = document.getElementById("userChip");
-  const chipText = userChip.textContent;
-  userChip.textContent = "";
-  const gate = document.getElementById("authGate");
-  const gateParent = gate.parentNode;
-  const gateNext = gate.nextSibling;
-  gate.remove();
-  // Password fields are serialized by their attributes, not their live value, but clear
-  // it explicitly rather than relying on that distinction holding.
-  document.getElementById("authPassword").value = "";
-
-  const html = "<!DOCTYPE html>\n" + document.documentElement.outerHTML;
-
-  // Put the live page back exactly as it was.
-  gateParent.insertBefore(gate, gateNext);
-  userChip.textContent = chipText;
-  snapshotEl.remove();
-  flagEl.remove();
-
-  const datePart = new Date().toISOString().slice(0,10);
-  downloadFile(`golive-dashboard-${datePart}.html`, "text/html", html);
-});
-</script>
-</body>
-</html>
+   browser storage needed) and see this 
