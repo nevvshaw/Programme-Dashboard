@@ -3955,18 +3955,45 @@ function wiPickField(header, spec, taken){
   return null;
 }
 
-/* Map a whole header row at once, claiming each field only once. Two columns can
-   legitimately match the same field — "Accountable" and "Responsible or
-   supporting" both look like an owner — and assigning both meant the second
-   silently overwrote the first, losing a column. First match wins; a later
-   column falls through to its next-best field instead. */
-function wiMapHeaders(headers, spec){
+/* Where an unrecognised column goes, in preference order. Synonyms can never
+   cover every heading a programme document invents — "In scope", "Definition",
+   "Outside scope or managed separately" are all unguessable — so an unmatched
+   column takes the next free slot rather than being discarded. */
+const WI_FALLBACK = {
+  custom:       ["item","detail","owner","due"],
+  risks:        ["risk","mitigation","impact"],
+  issues:       ["issue","action","comments"],
+  defects:      ["description","comments","owner"],
+  decisions:    ["title","detail"],
+  workstreams:  ["name","commentary","milestone","lead"],
+  stakeholders: ["name","notes","role","org"],
+  readiness:    ["area","evidence","mustClear","owner"]
+};
+
+/* Map a whole header row at once. Two rules, both learned from real documents:
+
+   A field is claimed once. "Accountable" and "Responsible or supporting" both
+   look like an owner, and assigning both meant the second silently overwrote the
+   first — a column vanished with no trace.
+
+   Nothing is dropped. A header matching no synonym takes the next free field
+   from the fallback order. Losing a column quietly is far worse than putting it
+   in an imperfect place, because the only symptom is a blank space nobody
+   notices until the document is in front of a steering group. */
+function wiMapHeaders(headers, spec, specKey){
   const taken = new Set();
-  return headers.map(h=>{
+  const map = headers.map(h=>{
     const field = wiPickField(h, spec, taken);
     if(field) taken.add(field);
     return field;
   });
+  const fallback = WI_FALLBACK[specKey] || spec.map(f => f[0]);
+  map.forEach((field, i)=>{
+    if(field || !String(headers[i]||"").trim()) return;
+    const free = fallback.find(f => !taken.has(f));
+    if(free){ taken.add(free); map[i] = free; }
+  });
+  return map;
 }
 
 /* Word writes "Green", "In Progress", "12/03/2026". State wants "g",
@@ -4085,13 +4112,13 @@ function wiPlan(blocks){
     if(b.rows.length){
       if(target && WI_FIELDS[target]){
         const spec = WI_FIELDS[target];
-        const map = wiMapHeaders(b.headers, spec);
+        const map = wiMapHeaders(b.headers, spec, target);
         if(map.some(Boolean)){
           return {block:b, kind:"section", target, map,
                   note:`${b.rows.length} row${b.rows.length===1?"":"s"} into ${SECTION_LABELS[target]||target}`};
         }
       }
-      const map = wiMapHeaders(b.headers, WI_FIELDS.custom);
+      const map = wiMapHeaders(b.headers, WI_FIELDS.custom, "custom");
       return {block:b, kind:"customTable", title:b.heading || "Imported table", map,
               note:`${b.rows.length} row${b.rows.length===1?"":"s"} into a new table section`};
     }
