@@ -420,8 +420,8 @@
     <button class="btn" id="btnSaveNow">Save now</button>
     <button class="btn" id="btnSaveVersion">Save weekly version</button>
     <button class="btn" id="btnExport">Export data</button>
-    <button class="btn" id="btnImport">Import data</button>
-    <input type="file" id="importFileInput" accept="application/json,.json" style="display:none;">
+    <button class="btn" id="btnImport" title="Import a JSON export, or lift tables in from a Word document">Import data</button>
+    <input type="file" id="importFileInput" accept="application/json,.json,.docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" style="display:none;">
     <button class="btn primary" id="btnExportHtml" title="Download a single HTML file with today's data baked in — anyone can open it, no import needed">Share as HTML</button>
     <button class="btn" id="btnDashEdit" title="Edit the dashboard sections in place, without opening the input panel">Edit on dashboard</button>
     <button class="btn" id="btnTogglePanel">Hide inputs</button>
@@ -4446,6 +4446,25 @@ document.getElementById("btnImport").addEventListener("click", ()=>{
 document.getElementById("importFileInput").addEventListener("change", (e)=>{
   const file = e.target.files && e.target.files[0];
   if(!file) return;
+
+  /* One button, two kinds of file. A .docx goes to the Word importer, whose
+     preview lives in the edit panel — so reveal the panel and scroll to it,
+     otherwise the picker closes and nothing visibly happens. */
+  if(/\.docx$/i.test(file.name) || file.type.includes("wordprocessingml")){
+    const layout = document.getElementById("layoutRoot");
+    if(layout && layout.classList.contains("collapsed")) setPanelCollapsed(false);
+    const group = document.getElementById("wordImportGroup");
+    const panel = document.querySelector(".panel");
+    if(group && panel) panel.scrollTop = Math.max(0, group.offsetTop - 12);
+    if(group){
+      group.style.outline = "2px solid var(--sky)";
+      setTimeout(()=>{ group.style.outline = ""; }, 1600);
+    }
+    wiHandleFile(file);
+    e.target.value = "";
+    return;
+  }
+
   const reader = new FileReader();
   reader.onload = async (evt)=>{
     try{
