@@ -893,7 +893,7 @@ function getDefaultState(){ return normaliseRefs({
     ]}
   ],
 
-  sectionOrder:["gantt","kpis","trend","progressChart","readiness","recoveryActions","workstreams","risks","customSections","issues","defects","assumptions","dependencies","systemsInScope","stakeholders","decisions","criticalPath"],
+  sectionOrder:["gantt","kpis","trend","progressChart","readiness","recoveryActions","workstreams","risks","issues","defects","assumptions","dependencies","systemsInScope","stakeholders","decisions","criticalPath"],
 
   filters:{readiness:"all", risk:"all"},
 
@@ -1203,13 +1203,29 @@ function mergeState(parsed){
   // Reconcile section order: keep only known section ids from the saved order (drops any
   // that no longer exist), then append any section ids that exist in this version but
   // weren't in the saved order yet (e.g. a section added after the save was made).
-  const savedOrder = Array.isArray(parsed && parsed.sectionOrder) ? parsed.sectionOrder.filter(id => defaultSectionOrder.includes(id)) : [];
-  const missingIds = defaultSectionOrder.filter(id => !savedOrder.includes(id));
+  /* Section order now mixes built-in ids with "custom:<id>" entries. A saved
+     order from before this change carries a single "customSections" entry: it is
+     expanded in place into one entry per custom section, so the sections stay
+     exactly where they were rather than jumping to the end. */
+  const customIds = Array.isArray(merged.customSections) ? merged.customSections.map(customOrderId) : [];
+  const rawOrder = Array.isArray(parsed && parsed.sectionOrder) ? parsed.sectionOrder : [];
+  const expanded = [];
+  rawOrder.forEach(id=>{
+    if(id === "customSections"){ customIds.forEach(cid=>{ if(!expanded.includes(cid)) expanded.push(cid); }); return; }
+    expanded.push(id);
+  });
+  const savedOrder = expanded.filter(id =>
+    defaultSectionOrder.includes(id) || (isCustomOrderId(id) && customIds.includes(id)));
+  // Anything the saved order does not mention yet — a section added since, or a
+  // custom section created on another device — goes to the end rather than being lost.
+  const missingIds = defaultSectionOrder.filter(id => !savedOrder.includes(id))
+    .concat(customIds.filter(id => !savedOrder.includes(id)));
   merged.sectionOrder = savedOrder.concat(missingIds);
   // Keep only hidden ids that still exist. A section added to the app after this save
   // is not in the list, so it defaults to visible rather than vanishing unexplained.
   merged.hiddenSections = Array.isArray(parsed && parsed.hiddenSections)
-    ? parsed.hiddenSections.filter(id => defaultSectionOrder.includes(id))
+    ? parsed.hiddenSections.filter(id =>
+        defaultSectionOrder.includes(id) || (isCustomOrderId(id) && customIds.includes(id)))
     : [];
   // Migrate gates saved under the old {label, week} shape (before gates were
   // pinned to real dates) into {label, date}, using this file's own start date
@@ -2114,6 +2130,29 @@ const SECTION_LABELS = {
 /* Which sections this customer actually shows. Stored as a list of hidden ids rather
    than visible ones, so a dashboard saved before this existed — and any section added
    to the app later — is visible by default rather than silently disappearing. */
+/* ---- Custom sections in the section order ----
+   Custom sections used to render as one indivisible block, so a single one could
+   not be moved or hidden on its own. Each now carries its own id in sectionOrder
+   as "custom:<id>". The built-in ids are unchanged. */
+const CUSTOM_ORDER_PREFIX = "custom:";
+function customOrderId(sec){ return CUSTOM_ORDER_PREFIX + (sec && sec.id); }
+function isCustomOrderId(id){ return typeof id === "string" && id.startsWith(CUSTOM_ORDER_PREFIX); }
+function customSectionFor(id, st){
+  const list = (st || state).customSections;
+  if(!isCustomOrderId(id) || !Array.isArray(list)) return null;
+  const key = id.slice(CUSTOM_ORDER_PREFIX.length);
+  return list.find(sec => String(sec.id) === key) || null;
+}
+/* The label shown in the Section order panel: a custom section is named by its
+   own title, which the user can rename at any time. */
+function sectionLabelFor(id){
+  if(isCustomOrderId(id)){
+    const sec = customSectionFor(id);
+    return (sec && sec.title) ? sec.title : "Untitled section";
+  }
+  return SECTION_LABELS[id] || id;
+}
+
 function hiddenSections(){
   if(!Array.isArray(state.hiddenSections)) state.hiddenSections = [];
   return state.hiddenSections;
@@ -2133,7 +2172,7 @@ function renderSectionOrderRows(){
     <div class="row-card" style="display:flex; align-items:center; justify-content:space-between; gap:8px; padding:8px 10px; ${isSectionVisible(id) ? "" : "opacity:.55;"}">
       <label style="display:flex; align-items:center; gap:7px; margin:0; font-weight:700; font-size:12px; color:var(--navy); text-transform:none; letter-spacing:0; cursor:pointer;">
         <input type="checkbox" data-section-visible="${esc(id)}" ${isSectionVisible(id) ? "checked" : ""} style="width:auto; margin:0;">
-        ${esc(SECTION_LABELS[id] || id)}
+        ${esc(sectionLabelFor(id))}
       </label>
       <div style="display:flex; gap:6px; flex-shrink:0;">
         <button class="btn-mini" data-move-up="${i}" ${i===0 ? "disabled" : ""}>▲</button>
@@ -2909,6 +2948,42 @@ function dueCell(row, today, field){
   return `<span class="due">${esc(fmtDate(due,{year:false}))}</span>`;
 }
 
+/* One custom section, rendered on its own so it can be positioned anywhere in the
+   section order. `si` stays the section's index in state.customSections because
+   the inline editors address rows by that index, not by the order position. */
+function renderCustomSection(sec, today){
+  const p = state;
+  const si = p.customSections.indexOf(sec);
+      if(sec.type === "list"){
+        return `
+          <div class="card">
+            <div class="card-head"><h3>${esc(sec.title) || "Untitled section"}</h3><button class="btn-mini no-print" data-print-card="1" title="Print or save just this section as a PDF">Print section</button></div>
+            ${sec.items.length ? `<ul class="bullets">${sec.items.map(it=>`<li>${esc(it)}</li>`).join("")}</ul>` : `<div class="empty-note">No items yet.</div>`}
+          </div>`;
+      }
+      const numCols = (sec.numbered ? 1 : 0) + (sec.priorityLayout ? 7 : 6);
+      return `
+        <div class="card">
+          <div class="card-head"><h3>${esc(sec.title) || "Untitled section"}</h3><button class="btn-mini no-print" data-print-card="1" title="Print or save just this section as a PDF">Print section</button></div>
+          <table>
+            <thead><tr>${sec.numbered ? `<th style="width:40px;">#</th>` : ""}<th>${sec.priorityLayout ? "Description" : "Item"}</th>${sec.priorityLayout ? `<th>Impact</th>` : ""}<th>RAG Status</th><th>Status</th><th style="width:92px;">${sec.priorityLayout ? "Date needs to be completed" : "Due"}</th><th>${sec.priorityLayout ? "Comments" : "Detail"}</th><th>Owner</th></tr></thead>
+            <tbody>
+              ${sec.rows.length ? sec.rows.map((r,i)=>`
+                <tr>
+                  ${sec.numbered ? `<td>${i+1}</td>` : ""}
+                  <td>${de(`<strong>${esc(r.item)}</strong>`, dsInput(si, i, "item", r.item))}</td>
+                  ${sec.priorityLayout ? `<td>${de(esc(r.impact||""), dsInput(si, i, "impact", r.impact||""))}</td>` : ""}
+                  <td>${de(`<span class="pill ${r.status}"><span class="dot"></span>${RAG_LABEL[r.status]}</span>`, dsSelect(si, i, "status", r.status, RAG_OPTS))}</td>
+                  <td>${de(`<span class="status-pill ${r.progress||'notstarted'}">${PROGRESS_OPTS.find(o=>o[0]===(r.progress||'notstarted'))?.[1]}</span>`, dsSelect(si, i, "progress", r.progress||'notstarted', progressSel()))}</td>
+                  <td>${de(dueCell(r, today), dsInput(si, i, "due", r.due||"", "date"))}</td>
+                  <td>${de(esc(r.detail), dsArea(si, i, "detail", r.detail))}</td>
+                  <td>${de(esc(r.owner), dsInput(si, i, "owner", r.owner))}</td>
+                </tr>`).join("") : `<tr><td colspan="${numCols}" class="empty-note">No rows yet.</td></tr>`}
+            </tbody>
+          </table>
+        </div>`;
+}
+
 function renderDashboard(){
   const p = state;
   const m = p.metrics;
@@ -3315,37 +3390,14 @@ function renderDashboard(){
       </table>
     </div>`,
 
-    customSections: () => p.customSections.map((sec,si)=>{
-      if(sec.type === "list"){
-        return `
-          <div class="card">
-            <div class="card-head"><h3>${esc(sec.title) || "Untitled section"}</h3><button class="btn-mini no-print" data-print-card="1" title="Print or save just this section as a PDF">Print section</button></div>
-            ${sec.items.length ? `<ul class="bullets">${sec.items.map(it=>`<li>${esc(it)}</li>`).join("")}</ul>` : `<div class="empty-note">No items yet.</div>`}
-          </div>`;
-      }
-      const numCols = (sec.numbered ? 1 : 0) + (sec.priorityLayout ? 7 : 6);
-      return `
-        <div class="card">
-          <div class="card-head"><h3>${esc(sec.title) || "Untitled section"}</h3><button class="btn-mini no-print" data-print-card="1" title="Print or save just this section as a PDF">Print section</button></div>
-          <table>
-            <thead><tr>${sec.numbered ? `<th style="width:40px;">#</th>` : ""}<th>${sec.priorityLayout ? "Description" : "Item"}</th>${sec.priorityLayout ? `<th>Impact</th>` : ""}<th>RAG Status</th><th>Status</th><th style="width:92px;">${sec.priorityLayout ? "Date needs to be completed" : "Due"}</th><th>${sec.priorityLayout ? "Comments" : "Detail"}</th><th>Owner</th></tr></thead>
-            <tbody>
-              ${sec.rows.length ? sec.rows.map((r,i)=>`
-                <tr>
-                  ${sec.numbered ? `<td>${i+1}</td>` : ""}
-                  <td>${de(`<strong>${esc(r.item)}</strong>`, dsInput(si, i, "item", r.item))}</td>
-                  ${sec.priorityLayout ? `<td>${de(esc(r.impact||""), dsInput(si, i, "impact", r.impact||""))}</td>` : ""}
-                  <td>${de(`<span class="pill ${r.status}"><span class="dot"></span>${RAG_LABEL[r.status]}</span>`, dsSelect(si, i, "status", r.status, RAG_OPTS))}</td>
-                  <td>${de(`<span class="status-pill ${r.progress||'notstarted'}">${PROGRESS_OPTS.find(o=>o[0]===(r.progress||'notstarted'))?.[1]}</span>`, dsSelect(si, i, "progress", r.progress||'notstarted', progressSel()))}</td>
-                  <td>${de(dueCell(r, today), dsInput(si, i, "due", r.due||"", "date"))}</td>
-                  <td>${de(esc(r.detail), dsArea(si, i, "detail", r.detail))}</td>
-                  <td>${de(esc(r.owner), dsInput(si, i, "owner", r.owner))}</td>
-                </tr>`).join("") : `<tr><td colspan="${numCols}" class="empty-note">No rows yet.</td></tr>`}
-            </tbody>
-          </table>
-        </div>`;
-    }).join("")
   };
+
+
+  // Each custom section becomes its own renderer, keyed by its order id, so it
+  // can sit anywhere among the built-in sections.
+  (p.customSections || []).forEach(sec=>{
+    sectionHTML[customOrderId(sec)] = () => renderCustomSection(sec, today);
+  });
 
   const orderedSections = state.sectionOrder
     .filter(id => sectionHTML[id] && isSectionVisible(id))
@@ -3816,9 +3868,11 @@ panel.addEventListener("click", e=>{
       const title = prompt("Title for the new section:", type==="customList" ? "New list section" : "New status table");
       if(!title) return;
       if(type === "customList"){
-        state.customSections.push({id:Date.now(), type:"list", title, items:["First item"]});
+        { const sec = {id:Date.now(), type:"list", title, items:["First item"]};
+          state.customSections.push(sec); state.sectionOrder.push(customOrderId(sec)); }
       } else {
-        state.customSections.push({id:Date.now(), type:"table", title, rows:[{item:"", detail:"", status:"a", progress:"notstarted", owner:""}]});
+        { const sec = {id:Date.now(), type:"table", title, rows:[{item:"", detail:"", status:"a", progress:"notstarted", owner:""}]};
+          state.customSections.push(sec); state.sectionOrder.push(customOrderId(sec)); }
       }
       renderForm(); renderDashboard();
       return;
@@ -3857,7 +3911,12 @@ panel.addEventListener("click", e=>{
   const rmSectionBtn = e.target.closest("[data-remove-section]");
   if(rmSectionBtn){
     if(!confirm("Remove this section from the dashboard? This cannot be undone.")) return;
-    state.customSections.splice(parseInt(rmSectionBtn.dataset.removeSection), 1);
+    { const gone = state.customSections.splice(parseInt(rmSectionBtn.dataset.removeSection), 1)[0];
+      if(gone){
+        const oid = customOrderId(gone);
+        state.sectionOrder = state.sectionOrder.filter(id => id !== oid);
+        if(Array.isArray(state.hiddenSections)) state.hiddenSections = state.hiddenSections.filter(id => id !== oid);
+      } }
     renderForm(); renderDashboard();
     return;
   }
@@ -4161,10 +4220,12 @@ function wiApply(plan){
         if(!row.progress) row.progress = "notstarted";
         return row;
       });
-      state.customSections.push({id: Date.now() + sectionsCreated, type:"table", title:p.title, rows});
+      { const sec = {id: Date.now() + sectionsCreated, type:"table", title:p.title, rows};
+        state.customSections.push(sec); state.sectionOrder.push(customOrderId(sec)); }
       sectionsCreated++; added += rows.length;
     }else if(p.kind === "customList"){
-      state.customSections.push({id: Date.now() + sectionsCreated, type:"list", title:p.title, items:p.block.items.slice()});
+      { const sec = {id: Date.now() + sectionsCreated, type:"list", title:p.title, items:p.block.items.slice()};
+        state.customSections.push(sec); state.sectionOrder.push(customOrderId(sec)); }
       sectionsCreated++; added += p.block.items.length;
     }
   });
