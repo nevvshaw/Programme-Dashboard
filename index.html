@@ -592,7 +592,7 @@
       </div>
 
       <div class="field-group">
-        <h2>Decisions needed this week</h2>
+        <h2>Decisions needed</h2>
         <div id="decisionRows"></div>
         <button class="add-row" data-add="decision">+ Add decision</button>
       </div>
@@ -2121,7 +2121,7 @@ const SECTION_LABELS = {
   assumptions:"Assumptions",
   dependencies:"Dependencies",
   systemsInScope:"Systems in scope — discovery",
-  decisions:"Decisions needed this week",
+  decisions:"Decisions needed",
   customSections:"Custom sections",
   trend:"Week-on-week movement",
   progressChart:"Progress over time chart"
@@ -2498,10 +2498,16 @@ function renderDecisionRows(){
       <input type="text" data-field="title" data-type="decision" data-i="${i}" value="${esc(d.title)}">
       <label>Detail</label>
       <input type="text" data-field="detail" data-type="decision" data-i="${i}" value="${esc(d.detail)}">
-      <label>Status</label>
-      <select data-field="status" data-type="decision" data-i="${i}">
-        ${DECISION_OPTS.map(s=>`<option ${d.status===s?"selected":""}>${s}</option>`).join("")}
-      </select>
+      <div class="row-grid">
+        <div><label>Status</label>
+          <select data-field="status" data-type="decision" data-i="${i}">
+            ${DECISION_OPTS.map(s=>`<option ${d.status===s?"selected":""}>${s}</option>`).join("")}
+          </select>
+        </div>
+        <div><label>Date needed by</label>
+          <input type="date" data-field="due" data-type="decision" data-i="${i}" value="${esc(d.due||"")}">
+        </div>
+      </div>
     </div>`).join("");
 }
 
@@ -3376,15 +3382,16 @@ function renderDashboard(){
 
     decisions: () => `
     <div class="card">
-      <div class="card-head"><h3>Decisions needed this week</h3></div>
+      <div class="card-head"><h3>Decisions needed</h3></div>
       <table>
-        <thead><tr><th>Decision</th><th>Detail</th><th>Status</th></tr></thead>
+        <thead><tr><th>Decision</th><th>Detail</th><th>Status</th><th style="width:92px;">Needed by</th></tr></thead>
         <tbody>
           ${p.decisions.map((d,i)=>`
             <tr>
               <td>${de(`<strong>${esc(d.title)}</strong>`, dInput("decision", i, "title", d.title))}</td>
               <td>${de(esc(d.detail), dArea("decision", i, "detail", d.detail))}</td>
               <td>${de(`<span class="pill ${d.status==='Approved'?'g':d.status==='Deferred'?'r':'a'}"><span class="dot"></span>${esc(d.status)}</span>`, dSelect("decision", i, "status", d.status, decisionSel()))}</td>
+              <td>${de(dueCell({due:d.due, progress:(d.status==='Approved'?'completed':'')}, today), dInput("decision", i, "due", d.due||"", "date"))}</td>
             </tr>`).join("")}
         </tbody>
       </table>
@@ -3886,7 +3893,7 @@ panel.addEventListener("click", e=>{
     if(type==="risk") arr.push({ref:nextRef("risks"), risk:"", impact:"Medium", mitigation:""});
     if(type==="issue") arr.push({ref:nextRef("issues"), issue:"", sev:"P2", rag:"r", progress:"notstarted", action:"", comments:""});
     if(type==="defect") arr.push({defectNo:"", description:"", severity:"P2", status:"open", owner:"", comments:"", resolutionDate:""});
-    if(type==="decision") arr.push({title:"", detail:"", status:"Pending"});
+    if(type==="decision") arr.push({title:"", detail:"", status:"Pending", due:""});
     if(type==="ganttTrack") arr.push({name:"New track", start:1, end:1});
     if(type==="ganttGate") arr.push({label:"New gate", date: state.ganttStartDate});
     if(type==="customMetric") arr.push({label:"New metric", value:0, note:""});
@@ -3991,7 +3998,7 @@ const WI_FIELDS = {
   risks:        [["risk",["risk","description","title"]],["impact",["impact","severity","priority"]],["mitigation",["mitigation","action","response","plan"]]],
   issues:       [["issue",["issue","description","title"]],["sev",["sev","severity","priority"]],["rag",["rag"]],["progress",["status","progress"]],["action",["action","owner","resolution"]],["comments",["comment","note"]]],
   defects:      [["defectNo",["defect no","defect","number","id","ref"]],["description",["description","summary","title"]],["severity",["sev","severity","priority"]],["owner",["owner","assignee"]],["comments",["comment","note"]],["resolutionDate",["resolution","target","due","date"]]],
-  decisions:    [["title",["decision","title","item"]],["detail",["detail","description","note","purpose"]],["status",["status","outcome"]]],
+  decisions:    [["title",["decision","title","item"]],["due",["due","date","deadline","by when","target"]],["detail",["detail","description","note","purpose"]],["status",["status","outcome"]]],
   workstreams:  [["name",["workstream","name","title"]],["lead",["lead","owner"]],["percent",["percent","complete","progress %"]],["rag",["rag"]],["progress",["status","progress"]],["completionDate",["completion","target","due","date"]],["milestone",["milestone","next"]],["commentary",["commentary","comment","note"]]],
   stakeholders: [["name",["stakeholder","name"]],["role",["role","title","position"]],["org",["organisation","organization","company","org"]],["influence",["influence","power"]],["engagement",["engagement","attitude","support"]],["contact",["contact","email"]],["notes",["note","comment"]]],
   readiness:    [["area",["area","workstream","topic"]],["rag",["rag","status"]],["evidence",["evidence","detail","finding"]],["mustClear",["must clear","action","to clear","required"]],["owner",["owner","lead"]]],
@@ -4023,7 +4030,7 @@ const WI_FALLBACK = {
   risks:        ["risk","mitigation","impact"],
   issues:       ["issue","action","comments"],
   defects:      ["description","comments","owner"],
-  decisions:    ["title","detail"],
+  decisions:    ["title","detail","due"],
   workstreams:  ["name","commentary","milestone","lead"],
   stakeholders: ["name","notes","role","org"],
   readiness:    ["area","evidence","mustClear","owner"]
