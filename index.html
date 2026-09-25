@@ -3421,9 +3421,15 @@ function renderDashboard(){
       <img src="${FELBER_LOGO}" alt="Felber Consulting">
     </div>
     <div class="dash-head">
-      <div>
-        <h2>${esc(p.header.programme)}</h2>
-        <p>${esc(p.header.period)} · Target go-live: ${goLive ? fmtDate(goLive) : "—"}</p>
+      <div style="flex:1; min-width:240px;">
+        ${de(`<h2>${esc(p.header.programme)}</h2>`,
+             `<input class="dash-edit" data-dstate="header.programme" value="${esc(p.header.programme)}"
+                     placeholder="Programme name"
+                     style="font-size:19px; font-weight:700; color:var(--navy); padding:4px 6px;">`)}
+        <p>${de(`${esc(p.header.period)} · Target go-live: ${goLive ? fmtDate(goLive) : "—"}`,
+                `<input class="dash-edit" data-dstate="header.period" value="${esc(p.header.period)}"
+                        placeholder="Period — e.g. Steering review, week commencing 28 Sep"
+                        style="max-width:460px; margin-top:4px;"> · Target go-live: ${goLive ? fmtDate(goLive) : "—"}`)}</p>
       </div>
       ${de(
         `<span class="rag-badge ${overallRag}" data-overall-rag-badge title="${ragIsManual ? `Set manually.${ragDisagrees ? ` The readiness scorecard says ${RAG_LABEL[derivedRag]}.` : ""}` : "Derived from the readiness scorecard."}"><span class="dot"></span>Overall readiness: ${RAG_LABEL[overallRag]}${ragDisagrees ? ` <span style="font-weight:400; opacity:.75;">(set manually)</span>` : ""}</span>`,
@@ -4440,7 +4446,14 @@ document.getElementById("btnDashEdit").addEventListener("click", ()=>{ setDashEd
 function applyDashEdit(t){
   // A handful of editors drive a top-level field rather than a row in a list.
   if(t.dataset.dstate){
-    state[t.dataset.dstate] = t.value;
+    // Dotted so nested fields work: "header.programme" as well as a plain key.
+    const path = t.dataset.dstate.split(".");
+    let obj = state;
+    for(let i = 0; i < path.length - 1; i++){
+      if(obj[path[i]] === null || typeof obj[path[i]] !== "object") obj[path[i]] = {};
+      obj = obj[path[i]];
+    }
+    obj[path[path.length - 1]] = t.value;
     return true;
   }
   if(t.dataset.dsec !== undefined){
