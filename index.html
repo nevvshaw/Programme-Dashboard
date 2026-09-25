@@ -426,6 +426,13 @@
     <button class="btn" id="btnDashEdit" title="Edit the dashboard sections in place, without opening the input panel">Edit on dashboard</button>
     <button class="btn" id="btnTogglePanel">Hide inputs</button>
     <button class="btn" id="btnReset">Reset to deck data</button>
+    <div class="tb-field">
+      <label for="printOrientation">Page</label>
+      <select id="printOrientation" title="Orientation used by Print / Save PDF">
+        <option value="portrait">Portrait</option>
+        <option value="landscape">Landscape</option>
+      </select>
+    </div>
     <button class="btn primary" id="btnPrint">Print / Save PDF</button>
     <button class="btn" id="btnSignOut">Sign out</button>
   </div>
@@ -3506,7 +3513,50 @@ document.getElementById("f-ganttWeeks").addEventListener("input", e=>{
   renderDashboard();
 });
 
-document.getElementById("btnPrint").addEventListener("click", ()=>window.print());
+/* ---- Print orientation ----
+   @page is not selectable, so orientation cannot be flipped with a class. A
+   dedicated style element is appended after the main sheet and rewritten when
+   the choice changes; it wins on order. The margin matches the print block so
+   the two cannot drift apart.
+
+   The wide sections — an 11-week Gantt, the 9-column workstream table — are the
+   reason this exists: portrait squeezes them badly. The choice is remembered per
+   browser, like the panel state, rather than stored in the shared document. */
+const PRINT_ORIENTATION_KEY = "golive-dashboard-print-orientation";
+
+function setPrintOrientation(value, persist){
+  const orientation = value === "landscape" ? "landscape" : "portrait";
+  let el = document.getElementById("printOrientationStyle");
+  if(!el){
+    el = document.createElement("style");
+    el.id = "printOrientationStyle";
+    document.head.appendChild(el);
+  }
+  el.textContent = `@page{ size: A4 ${orientation}; margin:10mm; }`;
+  const sel = document.getElementById("printOrientation");
+  if(sel && sel.value !== orientation) sel.value = orientation;
+  if(persist){
+    try{ localStorage.setItem(PRINT_ORIENTATION_KEY, orientation); }catch(err){}
+  }
+  return orientation;
+}
+
+document.getElementById("printOrientation").addEventListener("change", e=>{
+  setPrintOrientation(e.target.value, true);
+});
+
+document.getElementById("btnPrint").addEventListener("click", ()=>{
+  // Re-apply on the way out: a "Share as HTML" copy or a restored version may
+  // have replaced the style element since it was last set.
+  setPrintOrientation(document.getElementById("printOrientation").value, false);
+  window.print();
+});
+
+(function initPrintOrientation(){
+  let saved = "portrait";
+  try{ saved = localStorage.getItem(PRINT_ORIENTATION_KEY) || "portrait"; }catch(err){}
+  setPrintOrientation(saved, false);
+})();
 
 /* Per-section "Print section" buttons (data-print-card, added to each custom
    section's card-head). Hides every other top-level block in #dash for the
