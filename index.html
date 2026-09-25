@@ -3936,16 +3936,37 @@ const WI_FIELDS = {
   workstreams:  [["name",["workstream","name","title"]],["lead",["lead","owner"]],["percent",["percent","complete","progress %"]],["rag",["rag"]],["progress",["status","progress"]],["completionDate",["completion","target","due","date"]],["milestone",["milestone","next"]],["commentary",["commentary","comment","note"]]],
   stakeholders: [["name",["stakeholder","name"]],["role",["role","title","position"]],["org",["organisation","organization","company","org"]],["influence",["influence","power"]],["engagement",["engagement","attitude","support"]],["contact",["contact","email"]],["notes",["note","comment"]]],
   readiness:    [["area",["area","workstream","topic"]],["rag",["rag","status"]],["evidence",["evidence","detail","finding"]],["mustClear",["must clear","action","to clear","required"]],["owner",["owner","lead"]]],
-  custom:       [["item",["action","item","task","description","title","activity"]],["owner",["owner","assignee","lead","responsible"]],["detail",["note","detail","purpose","comment","outcome"]],["status",["rag"]],["progress",["status","progress"]],["due",["due","target","date","deadline"]]]
+  /* RACI headings matter here: a responsibility matrix is Deliverable /
+     Accountable / Responsible, and none of those words were recognised. Worse,
+     "Responsible or supporting" matched owner via "responsible", so the
+     supporting cast landed in the Owner column while the accountable person was
+     dropped entirely. "accountable" is therefore tried before "responsible", and
+     "deliverable" is an item. */
+  custom:       [["item",["action","item","task","deliverable","description","title","activity","area","topic"]],["owner",["accountable","owner","assignee","lead","responsible"]],["detail",["supporting","note","detail","purpose","comment","outcome","evidence"]],["status",["rag"]],["progress",["status","progress"]],["due",["due","target","date","deadline"]]]
 };
 
-function wiPickField(header, spec){
+function wiPickField(header, spec, taken){
   const n = wiNorm(header);
   if(!n) return null;
   for(const [field, needles] of spec){
+    if(taken && taken.has(field)) continue;
     if(needles.some(x => n.includes(x))) return field;
   }
   return null;
+}
+
+/* Map a whole header row at once, claiming each field only once. Two columns can
+   legitimately match the same field — "Accountable" and "Responsible or
+   supporting" both look like an owner — and assigning both meant the second
+   silently overwrote the first, losing a column. First match wins; a later
+   column falls through to its next-best field instead. */
+function wiMapHeaders(headers, spec){
+  const taken = new Set();
+  return headers.map(h=>{
+    const field = wiPickField(h, spec, taken);
+    if(field) taken.add(field);
+    return field;
+  });
 }
 
 /* Word writes "Green", "In Progress", "12/03/2026". State wants "g",
@@ -4064,13 +4085,13 @@ function wiPlan(blocks){
     if(b.rows.length){
       if(target && WI_FIELDS[target]){
         const spec = WI_FIELDS[target];
-        const map = b.headers.map(h=>wiPickField(h, spec));
+        const map = wiMapHeaders(b.headers, spec);
         if(map.some(Boolean)){
           return {block:b, kind:"section", target, map,
                   note:`${b.rows.length} row${b.rows.length===1?"":"s"} into ${SECTION_LABELS[target]||target}`};
         }
       }
-      const map = b.headers.map(h=>wiPickField(h, WI_FIELDS.custom));
+      const map = wiMapHeaders(b.headers, WI_FIELDS.custom);
       return {block:b, kind:"customTable", title:b.heading || "Imported table", map,
               note:`${b.rows.length} row${b.rows.length===1?"":"s"} into a new table section`};
     }
