@@ -309,6 +309,27 @@
     td{padding:5px 7px;}
     th{padding:4px 7px;}
     .footer-strip{padding:8px 14px;}
+
+    /* ---- The timeline, and the gap it leaves ----
+       .gantt is break-inside:avoid because a timeline split across a page
+       boundary — week headers on one page, bars on the next — is unreadable.
+       The cost is that wherever it lands, it moves whole: measured at 306px it
+       stranded 261px of blank page behind it.
+
+       It cannot be made to fragment sensibly, so it is made smaller instead.
+       Shorter rows and a tighter gate row take roughly a third off its height,
+       so it fits in gaps that previously pushed it to the next page. Nothing is
+       scaled below legibility: the label and bar text keep their size. */
+    .gantt{grid-template-rows:auto !important; row-gap:2px !important;}
+    .gantt .bar{height:20px !important; padding:0 6px;}
+    .gantt .cell{min-height:20px !important;}
+    .gantt .lbl-cell{padding:3px 6px; line-height:1.25;}
+    .gantt .hcell{padding:3px 3px; line-height:1.2;}
+    .gantt-legend{margin-top:6px; font-size:10px;}
+
+    /* Small blocks kept whole are cheap; large ones are not. A card that is most
+       of a page tall should flow rather than leave most of a page blank. */
+    .crit-card, .action-card{break-inside:auto;}
   }
 
   /* ---- Auth gate ----
