@@ -203,7 +203,18 @@
   #dash.editing .gantt .bar:hover .gh{background:rgba(255,255,255,.35);}
   #dash.editing .gantt .lbl-cell input{width:100%;}
 
+  /* Marks on the timeline's gate row. Hard gates stay red; a go/no-go checkpoint is
+     a different kind of event — a decision to release rather than a date to hit — so
+     it gets navy and a chip. Red on the orange bars reads as "one more deadline";
+     the point of the colour is that a reader can pick the decision points out of a
+     row of a dozen gates. Navy is used rather than --sky, which at 10px bold sits
+     around 2.6:1 on white and fails AA. */
+  .gate-marks{text-align:center; font-size:10px; font-weight:700; line-height:1.4;}
+  .gate-hard{color:var(--red);}
+  .gate-cp{color:var(--navy); background:var(--sky-pale); border:1px solid #BEDCF0; border-radius:4px; padding:1px 3px; margin:1px 0;}
+
   .gantt-legend{display:flex; gap:16px; margin-top:12px; font-size:11px; color:var(--muted); flex-wrap:wrap;}
+  .gantt-legend .lg-cp{color:var(--navy); font-weight:600;}
 
   .flow{display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-top:6px;}
   .flow-box{background:var(--sky-pale); border:1px solid var(--sky); border-radius:8px; padding:10px 14px; font-size:12px; font-weight:700; color:var(--navy); text-align:center; flex:1; min-width:110px;}
@@ -2733,6 +2744,15 @@ function computeGanttWeeks(){
   return weeks;
 }
 
+/* A go/no-go decision point rather than a delivery gate. Set kind:"checkpoint" to
+   flag one explicitly, otherwise it is read off the label, so a gate typed as
+   "Go/no-go: …" in the edit panel is picked up without needing a second field to
+   fill in. Matches "Go/no-go", "Go/No Go" and "Go No-Go". */
+function isGateCheckpoint(g){
+  if(g && g.kind === "checkpoint") return true;
+  return /^\s*go\s*\/?\s*no[\s/-]*go\b/i.test(String((g && g.label) || ""));
+}
+
 function renderGantt(){
   const today = new Date(); today.setHours(0,0,0,0);
   const weeks = computeGanttWeeks();
@@ -2786,9 +2806,10 @@ function renderGantt(){
     // any trailing d/m in the label is stripped so it isn't shown twice.
     const gateLabels = matches.map(g=>{
       const label = String(g.label||"").replace(/[\s—–-]*\b\d{1,2}[\/.]\d{1,2}(?:[\/.]\d{2,4})?\s*$/, "").trim();
-      return `<div>▲ ${esc(label)} ${esc(fmtDateStr(g.date,{year:false}))}</div>`;
+      const cp = isGateCheckpoint(g);
+      return `<div class="${cp?"gate-cp":"gate-hard"}">${cp?"◆":"▲"} ${esc(label)} ${esc(fmtDateStr(g.date,{year:false}))}</div>`;
     }).join("");
-    cells.push(`<div class="cell" style="grid-row:${gateRow}; grid-column:${w.week+1}; min-height:22px; background:transparent;">${matches.length?`<div style="text-align:center; font-size:10px; font-weight:700; color:var(--red); line-height:1.4;">${gateLabels}</div>`:""}</div>`);
+    cells.push(`<div class="cell" style="grid-row:${gateRow}; grid-column:${w.week+1}; min-height:22px; background:transparent;">${matches.length?`<div class="gate-marks">${gateLabels}</div>`:""}</div>`);
   });
 
   // Wrapped so a drag can repaint just the timeline instead of the whole dashboard,
@@ -2800,6 +2821,7 @@ function renderGantt(){
     </div>
     <div class="gantt-legend">
       <span>▲ Hard gate — the date moves if a gate fails; the gate does not.</span>
+      ${state.gates.some(isGateCheckpoint) ? `<span class="lg-cp">◆ Go/no-go checkpoint — a decision to release, taken against exit criteria.</span>` : ""}
       ${dashEdit ? `<span>Drag a bar to move it; drag its edges to change when it starts or ends.</span>` : ""}
     </div>
     </div>
