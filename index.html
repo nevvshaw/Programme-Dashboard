@@ -390,26 +390,6 @@
      in the corner however many rows the controls wrap onto. The room it needs is
      reserved by setting the bar's right padding from the chip's measured width, since
      that varies with the length of the display name. */
-  /* "More" holds the controls that are reached occasionally, so the bar carries only
-     what gets touched on most visits. The buttons are moved into it rather than
-     duplicated, which keeps every existing handler and id gate working untouched. */
-  .more-wrap{position:relative;}
-  .more-menu{position:absolute; right:0; top:calc(100% + 8px); z-index:60; width:min(232px, calc(100vw - 32px));
-    background:var(--paper); border:1px solid var(--border); border-radius:10px;
-    padding:8px; box-shadow:0 10px 30px rgba(0,0,0,.22);}
-  .more-menu[hidden]{display:none;}
-  .mm-group + .mm-group{margin-top:6px; padding-top:6px; border-top:1px solid var(--border);}
-  .mm-head{display:block; font-size:10px; font-weight:700; color:var(--muted);
-    text-transform:uppercase; letter-spacing:.5px; padding:2px 8px 4px;}
-  .mm-items{display:flex; flex-direction:column;}
-  /* The buttons were styled for a dark bar; inside a white panel they become menu rows. */
-  .more-menu .btn{display:block; width:100%; text-align:left; background:transparent;
-    border:0; color:var(--ink); padding:7px 8px; border-radius:6px; font-size:12.5px; font-weight:600;}
-  .more-menu .btn:hover{background:var(--sky-pale);}
-  .more-menu .btn.primary{background:transparent; color:var(--ink);}
-  .more-menu .btn.primary:hover{background:var(--sky-pale);}
-  .more-menu #btnReset, .more-menu #btnDeleteProgramme{color:var(--red);}
-
   .profile-wrap{position:absolute; top:14px; right:24px; z-index:2;}
   .profile-chip{display:flex; align-items:center; gap:7px; background:var(--navy);
     border:1px solid rgba(255,255,255,.45); border-radius:999px; padding:3px 10px 3px 3px; cursor:pointer;}
@@ -421,7 +401,7 @@
   .avatar img{width:100%; height:100%; object-fit:cover; display:block;}
   .avatar.lg{width:44px; height:44px; font-size:15px;}
   .avatar.sm{width:18px; height:18px; font-size:8px;}
-  .profile-menu{position:absolute; right:0; top:calc(100% + 8px); z-index:60; width:min(290px, calc(100vw - 32px));
+  .profile-menu{position:absolute; right:0; top:calc(100% + 8px); z-index:60; width:290px;
     background:var(--paper); color:var(--ink); border:1px solid var(--border); border-radius:10px;
     padding:14px; box-shadow:0 10px 30px rgba(0,0,0,.22);}
   .profile-menu[hidden]{display:none;}
@@ -541,14 +521,6 @@
       </select>
     </div>
     <button class="btn primary" id="btnPrint">Print / Save PDF</button>
-    <div class="more-wrap">
-      <button class="btn" id="btnMore" title="Everything else" aria-haspopup="true" aria-expanded="false">More ⋯</button>
-      <div class="more-menu no-print" id="moreMenu" hidden>
-        <div class="mm-group" data-group="Programme"><span class="mm-head">Programme</span><div class="mm-items" id="mmProgramme"></div></div>
-        <div class="mm-group" data-group="Data"><span class="mm-head">Data</span><div class="mm-items" id="mmData"></div></div>
-        <div class="mm-group" data-group="Start over"><span class="mm-head">Start over</span><div class="mm-items" id="mmDanger"></div></div>
-      </div>
-    </div>
   </div>
   <div class="profile-wrap">
     <button id="profileChip" class="profile-chip" title="Your profile" aria-haspopup="true" aria-expanded="false">
@@ -1512,7 +1484,6 @@ async function refreshOwnerFlag(){
   });
   const grp = document.getElementById("accessGroup");
   if(grp) grp.style.display = isOwner ? "" : "none";
-  document.dispatchEvent(new CustomEvent("dashboard-access-resolved"));
   return isOwner;
 }
 
@@ -4941,90 +4912,6 @@ document.getElementById("accessRows").addEventListener("click", e=>{
   if(btn) revokeAccess(btn.dataset.revoke);
 });
 
-/* Both dropdowns hang from the right edge of their trigger. When the trigger sits near
-   the left of a narrow window, that pushes the panel off-screen, so flip it to hang from
-   the left instead. Measured rather than guessed at a breakpoint, because how far across
-   the trigger sits depends on how the controls have wrapped. */
-function keepMenuOnScreen(menu){
-  if(!menu || menu.hidden) return;
-  menu.style.transform = "";
-  const r = menu.getBoundingClientRect();
-  // Nudge by however much it overruns, rather than flipping which edge it hangs from:
-  // on a window narrower than the panel, flipping just moves the overflow to the other
-  // side. Right is corrected first, then left, so left wins when both apply.
-  let dx = 0;
-  if(r.right > window.innerWidth - 8) dx = (window.innerWidth - 8) - r.right;
-  if(r.left + dx < 8) dx = 8 - r.left;
-  if(dx) menu.style.transform = "translateX(" + Math.round(dx) + "px)";
-}
-
-/* ---- "More" menu ----
-
-   The top bar had grown to eighteen controls in one wrapping row, where the thing you
-   wanted was no easier to find than any of the seventeen you didn't. The ones reached
-   occasionally move into a grouped menu; the bar keeps what gets used on most visits.
-
-   The existing buttons are RELOCATED, not recreated. Every handler is bound by id and
-   several are shown or hidden by id (owner gating, and the read-only rules for a
-   standalone snapshot) — moving the actual nodes keeps all of that working with no
-   second copy to drift out of step. */
-(function wireMoreMenu(){
-  const btn = document.getElementById("btnMore");
-  const menu = document.getElementById("moreMenu");
-  if(!btn || !menu) return;
-
-  const LAYOUT = {
-    mmProgramme: ["btnNewDashboard", "btnNewProgramme", "btnDuplicateProgramme", "btnDeleteProgramme"],
-    mmData:      ["btnSaveVersion", "btnExport", "btnImport", "btnExportHtml"],
-    mmDanger:    ["btnReset"]
-  };
-  Object.entries(LAYOUT).forEach(([groupId, ids])=>{
-    const group = document.getElementById(groupId);
-    if(!group) return;
-    ids.forEach(id=>{
-      const el = document.getElementById(id);
-      if(el) group.appendChild(el);
-    });
-  });
-
-  /* A heading with nothing under it reads as a bug. Owner gating and standalone mode
-     both hide items by id, so which groups have anything in them is only known when
-     the menu is opened. */
-  function syncGroups(){
-    let any = false;
-    menu.querySelectorAll(".mm-group").forEach(g=>{
-      // Computed, not inline: owner gating hides by inline style but the read-only rules
-      // for a standalone snapshot hide by stylesheet, and only one of those shows up in
-      // el.style. Reading the inline value alone left an empty heading in a snapshot.
-      const visible = [...g.querySelectorAll(".btn")].some(b => getComputedStyle(b).display !== "none");
-      g.hidden = !visible;
-      if(visible) any = true;
-    });
-    btn.style.display = any ? "" : "none";
-  }
-
-  btn.addEventListener("click", (e)=>{
-    e.stopPropagation();
-    syncGroups();
-    menu.hidden = !menu.hidden;
-    btn.setAttribute("aria-expanded", String(!menu.hidden));
-    keepMenuOnScreen(menu);
-  });
-  // Choosing something closes the menu; clicking the padding around it does not.
-  menu.addEventListener("click", (e)=>{
-    e.stopPropagation();
-    if(e.target.closest(".btn")) close();
-  });
-  function close(){ menu.hidden = true; btn.setAttribute("aria-expanded", "false"); }
-  document.addEventListener("click", ()=>{ if(!menu.hidden) close(); });
-  document.addEventListener("keydown", e=>{ if(e.key === "Escape" && !menu.hidden) close(); });
-
-  syncGroups();
-  // Owner status arrives after the first render and hides items by id, so re-check then.
-  window.setTimeout(syncGroups, 0);
-  document.addEventListener("dashboard-access-resolved", syncGroups);
-})();
-
 /* ---- Profile menu ---- */
 (function wireProfileMenu(){
   const chip = document.getElementById("profileChip");
@@ -5035,7 +4922,7 @@ function keepMenuOnScreen(menu){
     e.stopPropagation();
     menu.hidden = !menu.hidden;
     chip.setAttribute("aria-expanded", String(!menu.hidden));
-    if(!menu.hidden){ setProfileHint("PNG, JPEG, WebP or GIF, up to 2 MB."); renderProfileChip(); keepMenuOnScreen(menu); }
+    if(!menu.hidden){ setProfileHint("PNG, JPEG, WebP or GIF, up to 2 MB."); renderProfileChip(); }
   });
   // Clicks inside the menu must not close it, but anything outside should.
   menu.addEventListener("click", e=> e.stopPropagation());
