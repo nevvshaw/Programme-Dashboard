@@ -34,6 +34,9 @@
   .print-logos{display:none;}
   .footer-logo{height:16px; width:auto; vertical-align:middle; margin-right:6px;}
   .topbar-controls{display:flex; align-items:center; gap:10px; flex-wrap:wrap;}
+  /* Marks where one group of controls ends and the next begins. Nothing is hidden —
+     the seams just make the grouping visible rather than implied. */
+  .tb-sep{width:1px; align-self:stretch; min-height:26px; background:rgba(255,255,255,.28);}
   .tb-field{display:flex; flex-direction:column; gap:2px;}
   .tb-field label{font-size:10px; text-transform:uppercase; letter-spacing:.5px; color:#BFD4F0; font-weight:700;}
   select, input[type="text"], input[type="date"], input[type="number"], input[type="email"], input[type="password"], textarea{
@@ -503,16 +506,19 @@
       <label for="goLiveDate">Target go-live</label>
       <input type="date" id="goLiveDate">
     </div>
+    <span class="tb-sep" aria-hidden="true"></span>
+    <button class="btn" id="btnDashEdit" title="Edit the dashboard sections in place, without opening the input panel">Edit on dashboard</button>
+    <button class="btn" id="btnTogglePanel">Hide inputs</button>
+    <span class="tb-sep" aria-hidden="true"></span>
     <span id="saveStatus" class="save-status"></span>
     <button class="btn" id="btnSaveNow">Save now</button>
     <button class="btn" id="btnSaveVersion">Save weekly version</button>
-    <button class="btn" id="btnExport">Export data</button>
+    <span class="tb-sep" aria-hidden="true"></span>
     <button class="btn" id="btnImport" title="Import a JSON export, or lift tables in from a Word document">Import data</button>
     <input type="file" id="importFileInput" accept="application/json,.json,.docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" style="display:none;">
+    <button class="btn" id="btnExport">Export data</button>
     <button class="btn primary" id="btnExportHtml" title="Download a single HTML file with today's data baked in — anyone can open it, no import needed">Share as HTML</button>
-    <button class="btn" id="btnDashEdit" title="Edit the dashboard sections in place, without opening the input panel">Edit on dashboard</button>
-    <button class="btn" id="btnTogglePanel">Hide inputs</button>
-    <button class="btn" id="btnReset">Reset to deck data</button>
+    <span class="tb-sep" aria-hidden="true"></span>
     <div class="tb-field">
       <label for="printOrientation">Page</label>
       <select id="printOrientation" title="Orientation used by Print / Save PDF">
@@ -521,6 +527,8 @@
       </select>
     </div>
     <button class="btn primary" id="btnPrint">Print / Save PDF</button>
+    <span class="tb-sep" aria-hidden="true"></span>
+    <button class="btn" id="btnReset">Reset to deck data</button>
   </div>
   <div class="profile-wrap">
     <button id="profileChip" class="profile-chip" title="Your profile" aria-haspopup="true" aria-expanded="false">
