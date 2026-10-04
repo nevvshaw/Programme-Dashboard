@@ -384,7 +384,13 @@
      button in an already-crowded top bar. */
   /* Last child of the topbar, pinned to the far right. flex-shrink:0 so a crowded
      control row squeezes itself rather than the profile. */
-  .profile-wrap{position:relative; margin-left:auto; flex-shrink:0;}
+  /* Pinned to the top-right corner rather than left in the flex flow: .topbar wraps,
+     so an in-flow chip lands on its own line *below* the controls, and align-self then
+     only aligns it within that bottom line. Absolute against the sticky topbar keeps it
+     in the corner however many rows the controls wrap onto. The room it needs is
+     reserved by setting the bar's right padding from the chip's measured width, since
+     that varies with the length of the display name. */
+  .profile-wrap{position:absolute; top:14px; right:24px; z-index:2;}
   .profile-chip{display:flex; align-items:center; gap:7px; background:var(--navy);
     border:1px solid rgba(255,255,255,.45); border-radius:999px; padding:3px 10px 3px 3px; cursor:pointer;}
   .profile-chip:hover{background:var(--navy-deep); border-color:#fff;}
@@ -3763,7 +3769,20 @@ function renderProfileChip(){
   if(rm) rm.hidden = !(myProfile && myProfile.avatar_url);
   const dn = document.getElementById("pmDisplayName");
   if(dn && document.activeElement !== dn) dn.value = name;
+  reserveProfileSpace();
 }
+
+/* The chip sits outside the flex flow, so the control rows know nothing about it.
+   Measure it and hold that much space clear on the right, or a long display name would
+   end up sitting on top of the first row of buttons. */
+function reserveProfileSpace(){
+  const bar = document.querySelector(".topbar");
+  const pw = document.querySelector(".profile-wrap");
+  if(!bar || !pw) return;
+  const w = pw.offsetWidth;
+  bar.style.paddingRight = w ? (w + 40) + "px" : "";
+}
+window.addEventListener("resize", reserveProfileSpace);
 
 function setProfileHint(msg, kind){
   const el = document.getElementById("pmHint");
