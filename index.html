@@ -33,7 +33,11 @@
      hidden on screen, where the topbar already carries the Felber logo. */
   .print-logos{display:none;}
   .footer-logo{height:16px; width:auto; vertical-align:middle; margin-right:6px;}
-  .topbar-controls{display:flex; align-items:center; gap:10px; flex-wrap:wrap;}
+  /* Bottom-aligned, not centred. A .tb-field carries its label above its control, making
+     it 17px taller than a plain button — centring the row therefore left every button
+     sitting 8px higher than the select next to it. Aligning to the bottom puts all the
+     controls on one line and lets the labels sit above it, which is where they belong. */
+  .topbar-controls{display:flex; align-items:flex-end; gap:10px; flex-wrap:wrap;}
   /* Marks where one group of controls ends and the next begins. Nothing is hidden —
      the seams just make the grouping visible rather than implied. */
   .tb-sep{width:1px; align-self:stretch; min-height:26px; background:rgba(255,255,255,.28);}
@@ -49,6 +53,13 @@
   .btn.primary:hover{background:#4FB6E8;}
   .btn:focus-visible, select:focus-visible, input:focus-visible{outline:2px solid var(--sky); outline-offset:2px;}
   .save-status{font-size:11.5px; color:#C7D3EE; font-weight:600; white-space:nowrap;}
+  /* One height for every control in the bar. Buttons, selects and the date input each
+     computed their own height from padding and font metrics, which landed within a pixel
+     of each other but not on it. Declaring it once removes the discrepancy at source. */
+  .topbar .btn, .topbar select, .topbar input[type="date"], .topbar .save-status{
+    height:34px; box-sizing:border-box;}
+  .topbar .btn{display:inline-flex; align-items:center; padding-top:0; padding-bottom:0;}
+  .topbar .save-status{display:inline-flex; align-items:center; align-self:flex-end;}
   .save-status[data-status="saved"]{color:#9BE7B4;}
   .save-status[data-status="error"]{color:#F3A9A9;}
   .save-status[data-status="pending"], .save-status[data-status="saving"]{color:#FFE1A8;}
