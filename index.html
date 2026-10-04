@@ -380,6 +380,59 @@
 
   .topbar .user-chip{font-size:11.5px; color:#C7D3EE; font-weight:600; white-space:nowrap;}
 
+  /* Profile chip and menu. The chip also absorbs Sign out, which used to be its own
+     button in an already-crowded top bar. */
+  .profile-wrap{position:relative;}
+  .profile-chip{display:flex; align-items:center; gap:7px; background:rgba(255,255,255,.08);
+    border:1px solid rgba(255,255,255,.18); border-radius:999px; padding:3px 10px 3px 3px; cursor:pointer;}
+  .profile-chip:hover{background:rgba(255,255,255,.16);}
+  .avatar{width:24px; height:24px; border-radius:50%; flex-shrink:0; display:inline-flex;
+    align-items:center; justify-content:center; background:var(--sky); color:#fff;
+    font-size:10px; font-weight:700; letter-spacing:.3px; overflow:hidden; text-transform:uppercase;}
+  .avatar img{width:100%; height:100%; object-fit:cover; display:block;}
+  .avatar.lg{width:44px; height:44px; font-size:15px;}
+  .avatar.sm{width:18px; height:18px; font-size:8px;}
+  .profile-menu{position:absolute; right:0; top:calc(100% + 8px); z-index:60; width:290px;
+    background:var(--paper); color:var(--ink); border:1px solid var(--border); border-radius:10px;
+    padding:14px; box-shadow:0 10px 30px rgba(0,0,0,.22);}
+  .profile-menu[hidden]{display:none;}
+  .pm-head{display:flex; gap:10px; align-items:center; margin-bottom:12px;}
+  .pm-id{display:flex; flex-direction:column; min-width:0;}
+  .pm-id strong{font-size:13px;}
+  .pm-id span{font-size:11px; color:var(--muted); overflow:hidden; text-overflow:ellipsis;}
+  .pm-role{align-self:flex-start; margin-top:3px; padding:1px 6px; border-radius:4px;
+    background:var(--sky-pale); color:var(--navy); font-weight:700; font-size:10px !important; text-transform:uppercase;}
+  .pm-label{display:block; font-size:10.5px; font-weight:700; color:var(--muted);
+    text-transform:uppercase; letter-spacing:.4px; margin:10px 0 4px;}
+  .pm-row{display:flex; gap:6px; align-items:center;}
+  .pm-row input[type=text]{flex:1; min-width:0; font-size:12px; padding:5px 7px;
+    border:1px solid var(--border); border-radius:6px;}
+  .pm-row input[type=file]{font-size:11px; min-width:0; flex:1;}
+  .pm-hint{margin:6px 0 12px; font-size:10.5px; color:var(--muted);}
+  .pm-hint.err{color:var(--red); font-weight:600;}
+  .pm-hint.ok{color:var(--green); font-weight:600;}
+
+  /* Go/no-go decision cell. Deliberately quiet until a decision exists, then loud. */
+  .appr-pill{display:inline-flex; align-items:center; gap:5px; padding:2px 8px; border-radius:999px;
+    font-size:10.5px; font-weight:700; white-space:nowrap;}
+  .appr-pill.approved{background:var(--green-bg); color:var(--green);}
+  .appr-pill.rejected{background:var(--red-bg); color:var(--red);}
+  .appr-pill.conditional{background:var(--amber-bg); color:var(--amber);}
+  .appr-pill.none{background:var(--bg); color:var(--muted);}
+  .appr-who{display:flex; align-items:center; gap:5px; margin-top:5px; font-size:10.5px; color:var(--muted);}
+  .appr-conds{margin-top:5px; font-size:11px; color:var(--ink); border-left:2px solid var(--amber); padding-left:6px;}
+  .appr-actions{display:flex; gap:4px; margin-top:7px; flex-wrap:wrap;}
+  .appr-actions .btn-mini{padding:2px 7px; font-size:10.5px;}
+  .appr-actions .ok{border-color:var(--green); color:var(--green);}
+  .appr-actions .no{border-color:var(--red); color:var(--red);}
+  .appr-form{margin-top:6px;}
+  .appr-form textarea{width:100%; font-size:11px; padding:5px; border:1px solid var(--border);
+    border-radius:6px; min-height:48px; font-family:inherit;}
+  .appr-hist{margin-top:6px; font-size:10.5px; color:var(--muted);}
+  .appr-hist li{margin-top:3px;}
+  .appr-err{margin-top:5px; font-size:10.5px; color:var(--red); font-weight:600;}
+  @media print{ .appr-actions, .appr-form{display:none !important;} }
+
   /* ---- Read-only mode (standalone "Share as HTML" exports) ----
      A shared snapshot has no Supabase connection to save back to, so every
      control that would imply an edit is hidden rather than left to fail. */
@@ -390,7 +443,7 @@
   body.readonly #btnReset,
   body.readonly #btnTogglePanel,
   body.readonly #btnExportHtml,
-  body.readonly #btnSignOut,
+  body.readonly .profile-wrap,
   body.readonly .version-actions{display:none !important;}
   body.readonly .layout{grid-template-columns:1fr;}
   body.readonly #goLiveDate{pointer-events:none; opacity:.75;}
@@ -441,7 +494,34 @@
       <label for="goLiveDate">Target go-live</label>
       <input type="date" id="goLiveDate">
     </div>
-    <span id="userChip" class="user-chip"></span>
+    <div class="profile-wrap">
+      <button id="profileChip" class="profile-chip" title="Your profile" aria-haspopup="true" aria-expanded="false">
+        <span id="profileAvatar" class="avatar"></span>
+        <span id="userChip" class="user-chip"></span>
+      </button>
+      <div id="profileMenu" class="profile-menu no-print" hidden>
+        <div class="pm-head">
+          <span id="pmAvatar" class="avatar lg"></span>
+          <div class="pm-id">
+            <strong id="pmName"></strong>
+            <span id="pmEmail"></span>
+            <span id="pmRole" class="pm-role"></span>
+          </div>
+        </div>
+        <label class="pm-label" for="pmDisplayName">Display name</label>
+        <div class="pm-row">
+          <input type="text" id="pmDisplayName" placeholder="How your name appears on decisions" maxlength="60">
+          <button class="btn-mini" id="pmSaveName">Save</button>
+        </div>
+        <label class="pm-label">Picture</label>
+        <div class="pm-row">
+          <input type="file" id="pmAvatarFile" accept="image/png,image/jpeg,image/webp,image/gif">
+          <button class="btn-mini danger" id="pmRemoveAvatar" hidden>Remove</button>
+        </div>
+        <p class="pm-hint" id="pmHint">PNG, JPEG, WebP or GIF, up to 2 MB.</p>
+        <button class="btn-mini" id="pmSignOut">Sign out</button>
+      </div>
+    </div>
     <span id="saveStatus" class="save-status"></span>
     <button class="btn" id="btnSaveNow">Save now</button>
     <button class="btn" id="btnSaveVersion">Save weekly version</button>
@@ -460,7 +540,6 @@
       </select>
     </div>
     <button class="btn primary" id="btnPrint">Print / Save PDF</button>
-    <button class="btn" id="btnSignOut">Sign out</button>
   </div>
 </div>
 
@@ -3004,12 +3083,13 @@ function renderCustomSection(sec, today){
             ${sec.items.length ? `<ul class="bullets">${sec.items.map(it=>`<li>${esc(it)}</li>`).join("")}</ul>` : `<div class="empty-note">No items yet.</div>`}
           </div>`;
       }
-      const numCols = (sec.numbered ? 1 : 0) + (sec.priorityLayout ? 7 : 6);
+      const showAppr = isApprovalSection(sec);
+      const numCols = (sec.numbered ? 1 : 0) + (sec.priorityLayout ? 7 : 6) + (showAppr ? 1 : 0);
       return `
         <div class="card">
           <div class="card-head"><h3>${esc(sec.title) || "Untitled section"}</h3><button class="btn-mini no-print" data-print-card="1" title="Print or save just this section as a PDF">Print section</button></div>
           <table>
-            <thead><tr>${sec.numbered ? `<th style="width:40px;">#</th>` : ""}<th>${sec.priorityLayout ? "Description" : "Item"}</th>${sec.priorityLayout ? `<th>Impact</th>` : ""}<th>RAG Status</th><th>Status</th><th style="width:92px;">${sec.priorityLayout ? "Date needs to be completed" : "Due"}</th><th>${sec.priorityLayout ? "Comments" : "Detail"}</th><th>Owner</th></tr></thead>
+            <thead><tr>${sec.numbered ? `<th style="width:40px;">#</th>` : ""}<th>${sec.priorityLayout ? "Description" : "Item"}</th>${sec.priorityLayout ? `<th>Impact</th>` : ""}<th>RAG Status</th><th>Status</th><th style="width:92px;">${sec.priorityLayout ? "Date needs to be completed" : "Due"}</th><th>${sec.priorityLayout ? "Comments" : "Detail"}</th><th>Owner</th>${showAppr ? `<th style="width:150px;">Decision</th>` : ""}</tr></thead>
             <tbody>
               ${sec.rows.length ? sec.rows.map((r,i)=>`
                 <tr>
@@ -3021,6 +3101,7 @@ function renderCustomSection(sec, today){
                   <td>${de(dueCell(r, today), dsInput(si, i, "due", r.due||"", "date"))}</td>
                   <td>${de(esc(r.detail), dsArea(si, i, "detail", r.detail))}</td>
                   <td>${de(esc(r.owner), dsInput(si, i, "owner", r.owner))}</td>
+                  ${showAppr ? `<td>${approvalCellHtml(sec, r, i)}</td>` : ""}
                 </tr>`).join("") : `<tr><td colspan="${numCols}" class="empty-note">No rows yet.</td></tr>`}
             </tbody>
           </table>
@@ -3591,6 +3672,264 @@ function renderDashboard(){
   });
 
   scheduleSave();
+}
+
+/* ============ PROFILES AND GO/NO-GO DECISIONS ============
+
+   Both live in their own tables rather than in the dashboard's state document.
+   The state document is saved whole under an optimistic lock on `revision`, so two
+   people acting at the same time would collide and one would silently lose. A
+   decision is also a different kind of fact from the plan it is about: the plan is
+   edited, a decision is recorded and then left alone. The approvals table is
+   append-only for that reason — a wrong click is corrected by making the right one,
+   which leaves the correction visible instead of quietly rewriting history. */
+
+let myProfile = null;            // this user's row in `profiles`
+let profilesById = {};           // user_id -> {display_name, avatar_url}, for attribution
+let approvalsByKey = {};         // checkpoint key -> decisions, newest first
+let myRole = null;               // owner | editor | viewer — governs whether buttons show
+const openApprovalForms = new Set();   // checkpoint keys whose "with conditions" box is open
+const approvalErrors = {};             // checkpoint key -> message to show under the buttons
+
+/* Treated as a decision point the same way the timeline markers are: an explicit flag,
+   or a section titled "Go/no-go …". Reading it off the title means a checkpoint section
+   can be created from the edit panel by naming it, with no extra control to find. */
+function isApprovalSection(sec){
+  if(!sec || sec.type !== "table") return false;
+  if(sec.approvals === true) return true;
+  return /^\s*go\s*\/?\s*no[\s/-]*go\b/i.test(String(sec.title || ""));
+}
+
+/* Rows need an identifier that survives reordering and retitling, because the decision
+   log points at it. Index would break on a move, and the item text would break on an
+   edit — either would silently reattach a recorded decision to the wrong checkpoint. */
+function approvalKeyFor(sec, row, i){
+  if(row && row.key) return row.key;
+  return "cp-" + (sec && sec.id) + "-" + i;
+}
+
+function initialsFor(name, email){
+  const src = String(name || "").trim() || String(email || "").split("@")[0] || "?";
+  const parts = src.replace(/[._-]+/g, " ").split(/\s+/).filter(Boolean);
+  return ((parts[0] || "?")[0] + (parts.length > 1 ? parts[parts.length - 1][0] : "")).slice(0, 2);
+}
+
+function avatarHtml(profile, email, cls){
+  const url = profile && profile.avatar_url;
+  const name = (profile && profile.display_name) || "";
+  const label = esc(name || email || "");
+  return `<span class="avatar ${cls || ""}" title="${label}">${
+    url ? `<img src="${esc(url)}" alt="${label}">` : esc(initialsFor(name, email))
+  }</span>`;
+}
+
+function displayNameFor(userId, email){
+  const p = profilesById[userId];
+  return (p && p.display_name) || email || "Unknown";
+}
+
+const APPROVAL_LABEL = { approved:"Approved", rejected:"Rejected", conditional:"Approved with conditions" };
+
+async function loadProfile(){
+  if(STANDALONE || !sb || !currentUser) return;
+  try{
+    const { data, error } = await sb.from("profiles").select("*").eq("user_id", currentUser.id).maybeSingle();
+    if(error) throw error;
+    myProfile = data || null;
+    if(myProfile) profilesById[currentUser.id] = myProfile;
+  }catch(err){
+    console.warn("Could not load your profile:", err);   // non-fatal: initials still render
+  }
+  renderProfileChip();
+}
+
+function renderProfileChip(){
+  const email = currentUser ? currentUser.email : "";
+  const name = (myProfile && myProfile.display_name) || "";
+  const chip = document.getElementById("userChip");
+  if(chip) chip.textContent = name || email;
+  const av = document.getElementById("profileAvatar");
+  if(av) av.outerHTML = avatarHtml(myProfile, email, "").replace('class="avatar ', 'id="profileAvatar" class="avatar ');
+  const big = document.getElementById("pmAvatar");
+  if(big) big.outerHTML = avatarHtml(myProfile, email, "lg").replace('class="avatar ', 'id="pmAvatar" class="avatar ');
+  const n = document.getElementById("pmName"); if(n) n.textContent = name || "No display name set";
+  const e = document.getElementById("pmEmail"); if(e) e.textContent = email;
+  const r = document.getElementById("pmRole");
+  if(r){ r.textContent = myRole || ""; r.hidden = !myRole; }
+  const rm = document.getElementById("pmRemoveAvatar");
+  if(rm) rm.hidden = !(myProfile && myProfile.avatar_url);
+  const dn = document.getElementById("pmDisplayName");
+  if(dn && document.activeElement !== dn) dn.value = name;
+}
+
+function setProfileHint(msg, kind){
+  const el = document.getElementById("pmHint");
+  if(!el) return;
+  el.textContent = msg;
+  el.className = "pm-hint" + (kind ? " " + kind : "");
+}
+
+async function saveMyProfile(fields){
+  if(!sb || !currentUser) return;
+  const row = Object.assign({
+    user_id: currentUser.id,
+    email: currentUser.email,
+    updated_at: new Date().toISOString()
+  }, fields);
+  const { data, error } = await sb.from("profiles").upsert(row, { onConflict:"user_id" }).select().single();
+  if(error) throw error;
+  myProfile = data;
+  profilesById[currentUser.id] = data;
+  renderProfileChip();
+  renderDashboard();   // attribution on past decisions picks up the new name or picture
+}
+
+/* Stored under a folder named after the user id, which is what the storage policy keys
+   on. A cache-busting suffix is appended because the bucket is public and the browser
+   would otherwise keep showing the previous picture after a replacement. */
+async function uploadMyAvatar(file){
+  if(!sb || !currentUser) return;
+  if(file.size > 2 * 1024 * 1024) throw new Error("That picture is larger than 2 MB.");
+  const ext = (file.name.split(".").pop() || "png").toLowerCase().replace(/[^a-z0-9]/g, "");
+  const path = `${currentUser.id}/avatar.${ext || "png"}`;
+  const { error: upErr } = await sb.storage.from("avatars")
+    .upload(path, file, { upsert:true, contentType:file.type || "image/png" });
+  if(upErr) throw upErr;
+  const { data:pub } = sb.storage.from("avatars").getPublicUrl(path);
+  await saveMyProfile({ avatar_url: pub.publicUrl + "?v=" + Date.now() });
+}
+
+async function loadApprovals(){
+  approvalsByKey = {};
+  if(STANDALONE || !sb || !dashboardId) return;
+  try{
+    const { data, error } = await sb.from("dashboard_approvals")
+      .select("*").eq("dashboard_id", dashboardId).order("decided_at", { ascending:false });
+    if(error) throw error;
+    (data || []).forEach(a=>{ (approvalsByKey[a.checkpoint_key] ||= []).push(a); });
+
+    // Names and pictures live in `profiles`, which PostgREST cannot join to from here
+    // because the link runs through auth.users. One extra fetch for the people involved.
+    const ids = [...new Set((data || []).map(a=>a.decided_by))].filter(id => !profilesById[id]);
+    if(ids.length){
+      const { data:profs } = await sb.from("profiles").select("user_id, display_name, avatar_url").in("user_id", ids);
+      (profs || []).forEach(p=>{ profilesById[p.user_id] = p; });
+    }
+  }catch(err){
+    console.warn("Could not load decisions:", err);   // the plan still renders without them
+  }
+}
+
+async function recordApproval(key, label, decision, conditions){
+  if(!sb || !currentUser || !dashboardId) return;
+  const { error } = await sb.from("dashboard_approvals").insert({
+    dashboard_id: dashboardId,
+    checkpoint_key: key,
+    checkpoint_label: label || null,
+    decision,
+    conditions: conditions || null,
+    decided_by: currentUser.id,
+    decided_email: currentUser.email
+  });
+  if(error) throw error;
+  await loadApprovals();
+}
+
+/* The decision column. Shows the standing decision, who made it and when, then the
+   buttons — which are hidden for viewers, in standalone snapshots and in print. */
+function approvalCellHtml(sec, row, i){
+  const key = approvalKeyFor(sec, row, i);
+  const log = approvalsByKey[key] || [];
+  const latest = log[0];
+  const canDecide = !STANDALONE && !!currentUser && myRole !== "viewer";
+
+  let html = "";
+  if(latest){
+    html += `<span class="appr-pill ${latest.decision}">${esc(APPROVAL_LABEL[latest.decision] || latest.decision)}</span>`;
+    html += `<div class="appr-who">${avatarHtml(profilesById[latest.decided_by], latest.decided_email, "sm")}
+      <span>${esc(displayNameFor(latest.decided_by, latest.decided_email))} · ${esc(fmtDateStr(latest.decided_at.slice(0,10)))}</span></div>`;
+    if(latest.conditions) html += `<div class="appr-conds">${esc(latest.conditions)}</div>`;
+  }else{
+    html += `<span class="appr-pill none">Not yet decided</span>`;
+  }
+
+  if(canDecide){
+    if(openApprovalForms.has(key)){
+      html += `<div class="appr-form">
+        <textarea data-appr-conds="${esc(key)}" placeholder="What must be true for this to stand?"></textarea>
+        <div class="appr-actions">
+          <button class="btn-mini" data-appr-save="${esc(key)}">Record</button>
+          <button class="btn-mini" data-appr-cancel="${esc(key)}">Cancel</button>
+        </div></div>`;
+    }else{
+      html += `<div class="appr-actions">
+        <button class="btn-mini ok" data-appr="approved" data-appr-key="${esc(key)}">Approve</button>
+        <button class="btn-mini" data-appr="conditional" data-appr-key="${esc(key)}">With conditions</button>
+        <button class="btn-mini no" data-appr="rejected" data-appr-key="${esc(key)}">Reject</button>
+      </div>`;
+    }
+  }
+
+  if(approvalErrors[key]) html += `<div class="appr-err">${esc(approvalErrors[key])}</div>`;
+
+  if(log.length > 1){
+    html += `<details class="appr-hist"><summary>${log.length - 1} earlier decision${log.length - 1 === 1 ? "" : "s"}</summary><ul>${
+      log.slice(1).map(a=>`<li>${esc(APPROVAL_LABEL[a.decision] || a.decision)} — ${esc(displayNameFor(a.decided_by, a.decided_email))}, ${esc(fmtDateStr(a.decided_at.slice(0,10)))}</li>`).join("")
+    }</ul></details>`;
+  }
+  return html;
+}
+
+/* Delegated because the dashboard is re-rendered wholesale after every decision, which
+   would drop any directly-bound handler. */
+document.addEventListener("click", async (e)=>{
+  const open = e.target.closest("[data-appr]");
+  if(open){
+    const key = open.dataset.apprKey;
+    delete approvalErrors[key];
+    if(open.dataset.appr === "conditional"){ openApprovalForms.add(key); renderDashboard(); return; }
+    await submitApproval(key, open.dataset.appr, null, open);
+    return;
+  }
+  const cancel = e.target.closest("[data-appr-cancel]");
+  if(cancel){ openApprovalForms.delete(cancel.dataset.apprCancel); renderDashboard(); return; }
+
+  const save = e.target.closest("[data-appr-save]");
+  if(save){
+    const key = save.dataset.apprSave;
+    const box = document.querySelector(`[data-appr-conds="${CSS.escape(key)}"]`);
+    const conds = box ? box.value.trim() : "";
+    if(!conds){ approvalErrors[key] = "Say what the conditions are before recording this."; renderDashboard(); return; }
+    await submitApproval(key, "conditional", conds, save);
+  }
+});
+
+async function submitApproval(key, decision, conditions, btn){
+  const label = approvalLabelFor(key);
+  const what = decision === "rejected" ? "Reject" : decision === "conditional" ? "Approve with conditions" : "Approve";
+  // A decision of record, attributed by name — worth one deliberate pause.
+  if(!confirm(`${what}: ${label || "this checkpoint"}?\n\nRecorded against your name and today's date, and visible to everyone with access.`)) return;
+  if(btn) btn.disabled = true;
+  try{
+    await recordApproval(key, label, decision, conditions);
+    openApprovalForms.delete(key);
+    delete approvalErrors[key];
+  }catch(err){
+    console.error("Could not record the decision:", err);
+    approvalErrors[key] = "Not recorded — " + describeError(err);
+  }
+  renderDashboard();
+}
+
+function approvalLabelFor(key){
+  for(const sec of (state.customSections || [])){
+    if(!isApprovalSection(sec)) continue;
+    const rows = sec.rows || [];
+    for(let i = 0; i < rows.length; i++){
+      if(approvalKeyFor(sec, rows[i], i) === key) return rows[i].item || "";
+    }
+  }
+  return "";
 }
 
 function renderAll(){ renderForm(); renderDashboard(); }
@@ -4383,6 +4722,7 @@ async function startSession(session){
   authStarted = true;
   currentUser = session.user;
   document.getElementById("userChip").textContent = session.user.email;
+  loadProfile();
 
   setSaveStatus("loading");
   let status;
@@ -4394,6 +4734,15 @@ async function startSession(session){
     showLogin("Signed in, but the dashboard could not be loaded — " + describeError(err), "error");
     return;
   }
+
+  // Role and decisions need dashboardId, so they come after the state loads. Neither is
+  // allowed to stop the dashboard appearing: a failure here costs the buttons, not the plan.
+  try{
+    const { data: role } = await sb.rpc("dashboard_role", { d_id: dashboardId });
+    myRole = role || null;
+  }catch(err){ console.warn("Could not read your role:", err); }
+  await loadApprovals();
+  renderProfileChip();
 
   try{
     renderAll();
@@ -4429,6 +4778,8 @@ function endSession(){
   // wiping them on an expired session would destroy the user's work with no way back.
   // They stay in memory; signing in again lets the pending save complete.
   document.getElementById("userChip").textContent = "";
+  myProfile = null; myRole = null; profilesById = {}; approvalsByKey = {};
+  const pmenu = document.getElementById("profileMenu"); if(pmenu) pmenu.hidden = true;
   showLogin(
     hasUnsavedWork()
       ? "Your session expired and your latest changes are not saved yet. Sign in again to save them — don't close this tab."
@@ -4539,7 +4890,66 @@ document.getElementById("accessRows").addEventListener("click", e=>{
   if(btn) revokeAccess(btn.dataset.revoke);
 });
 
-document.getElementById("btnSignOut").addEventListener("click", async ()=>{
+/* ---- Profile menu ---- */
+(function wireProfileMenu(){
+  const chip = document.getElementById("profileChip");
+  const menu = document.getElementById("profileMenu");
+  if(!chip || !menu) return;
+
+  chip.addEventListener("click", (e)=>{
+    e.stopPropagation();
+    menu.hidden = !menu.hidden;
+    chip.setAttribute("aria-expanded", String(!menu.hidden));
+    if(!menu.hidden){ setProfileHint("PNG, JPEG, WebP or GIF, up to 2 MB."); renderProfileChip(); }
+  });
+  // Clicks inside the menu must not close it, but anything outside should.
+  menu.addEventListener("click", e=> e.stopPropagation());
+  document.addEventListener("click", ()=>{
+    if(!menu.hidden){ menu.hidden = true; chip.setAttribute("aria-expanded", "false"); }
+  });
+  document.addEventListener("keydown", e=>{
+    if(e.key === "Escape" && !menu.hidden){ menu.hidden = true; chip.setAttribute("aria-expanded", "false"); }
+  });
+
+  document.getElementById("pmSaveName").addEventListener("click", async ()=>{
+    const name = document.getElementById("pmDisplayName").value.trim();
+    setProfileHint("Saving…");
+    try{
+      await saveMyProfile({ display_name: name || null });
+      setProfileHint("Name saved.", "ok");
+    }catch(err){
+      console.error("Could not save your name:", err);
+      setProfileHint("Not saved — " + describeError(err), "err");
+    }
+  });
+
+  document.getElementById("pmAvatarFile").addEventListener("change", async (e)=>{
+    const file = e.target.files && e.target.files[0];
+    if(!file) return;
+    setProfileHint("Uploading…");
+    try{
+      await uploadMyAvatar(file);
+      setProfileHint("Picture updated.", "ok");
+    }catch(err){
+      console.error("Could not upload your picture:", err);
+      setProfileHint("Not uploaded — " + describeError(err), "err");
+    }
+    e.target.value = "";   // so choosing the same file again still fires a change
+  });
+
+  document.getElementById("pmRemoveAvatar").addEventListener("click", async ()=>{
+    setProfileHint("Removing…");
+    try{
+      await saveMyProfile({ avatar_url: null });
+      setProfileHint("Picture removed. Initials are shown instead.", "ok");
+    }catch(err){
+      console.error("Could not remove your picture:", err);
+      setProfileHint("Not removed — " + describeError(err), "err");
+    }
+  });
+})();
+
+document.getElementById("pmSignOut").addEventListener("click", async ()=>{
   if(hasUnsavedWork()){
     if(!confirm("You have changes that haven't been saved to Supabase yet. They are not stored anywhere else and will be lost. Sign out anyway?")) return;
   }
