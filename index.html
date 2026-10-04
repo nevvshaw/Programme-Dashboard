@@ -382,10 +382,13 @@
 
   /* Profile chip and menu. The chip also absorbs Sign out, which used to be its own
      button in an already-crowded top bar. */
-  .profile-wrap{position:relative;}
-  .profile-chip{display:flex; align-items:center; gap:7px; background:rgba(255,255,255,.08);
-    border:1px solid rgba(255,255,255,.18); border-radius:999px; padding:3px 10px 3px 3px; cursor:pointer;}
-  .profile-chip:hover{background:rgba(255,255,255,.16);}
+  /* Last child of the topbar, pinned to the far right. flex-shrink:0 so a crowded
+     control row squeezes itself rather than the profile. */
+  .profile-wrap{position:relative; margin-left:auto; flex-shrink:0;}
+  .profile-chip{display:flex; align-items:center; gap:7px; background:var(--navy);
+    border:1px solid rgba(255,255,255,.45); border-radius:999px; padding:3px 10px 3px 3px; cursor:pointer;}
+  .profile-chip:hover{background:var(--navy-deep); border-color:#fff;}
+  .profile-chip .user-chip{color:#fff;}
   .avatar{width:24px; height:24px; border-radius:50%; flex-shrink:0; display:inline-flex;
     align-items:center; justify-content:center; background:var(--sky); color:#fff;
     font-size:10px; font-weight:700; letter-spacing:.3px; overflow:hidden; text-transform:uppercase;}
@@ -494,34 +497,6 @@
       <label for="goLiveDate">Target go-live</label>
       <input type="date" id="goLiveDate">
     </div>
-    <div class="profile-wrap">
-      <button id="profileChip" class="profile-chip" title="Your profile" aria-haspopup="true" aria-expanded="false">
-        <span id="profileAvatar" class="avatar"></span>
-        <span id="userChip" class="user-chip"></span>
-      </button>
-      <div id="profileMenu" class="profile-menu no-print" hidden>
-        <div class="pm-head">
-          <span id="pmAvatar" class="avatar lg"></span>
-          <div class="pm-id">
-            <strong id="pmName"></strong>
-            <span id="pmEmail"></span>
-            <span id="pmRole" class="pm-role"></span>
-          </div>
-        </div>
-        <label class="pm-label" for="pmDisplayName">Display name</label>
-        <div class="pm-row">
-          <input type="text" id="pmDisplayName" placeholder="How your name appears on decisions" maxlength="60">
-          <button class="btn-mini" id="pmSaveName">Save</button>
-        </div>
-        <label class="pm-label">Picture</label>
-        <div class="pm-row">
-          <input type="file" id="pmAvatarFile" accept="image/png,image/jpeg,image/webp,image/gif">
-          <button class="btn-mini danger" id="pmRemoveAvatar" hidden>Remove</button>
-        </div>
-        <p class="pm-hint" id="pmHint">PNG, JPEG, WebP or GIF, up to 2 MB.</p>
-        <button class="btn-mini" id="pmSignOut">Sign out</button>
-      </div>
-    </div>
     <span id="saveStatus" class="save-status"></span>
     <button class="btn" id="btnSaveNow">Save now</button>
     <button class="btn" id="btnSaveVersion">Save weekly version</button>
@@ -540,6 +515,34 @@
       </select>
     </div>
     <button class="btn primary" id="btnPrint">Print / Save PDF</button>
+  </div>
+  <div class="profile-wrap">
+    <button id="profileChip" class="profile-chip" title="Your profile" aria-haspopup="true" aria-expanded="false">
+      <span id="profileAvatar" class="avatar"></span>
+      <span id="userChip" class="user-chip"></span>
+    </button>
+    <div id="profileMenu" class="profile-menu no-print" hidden>
+      <div class="pm-head">
+        <span id="pmAvatar" class="avatar lg"></span>
+        <div class="pm-id">
+          <strong id="pmName"></strong>
+          <span id="pmEmail"></span>
+          <span id="pmRole" class="pm-role"></span>
+        </div>
+      </div>
+      <label class="pm-label" for="pmDisplayName">Display name</label>
+      <div class="pm-row">
+        <input type="text" id="pmDisplayName" placeholder="How your name appears on decisions" maxlength="60">
+        <button class="btn-mini" id="pmSaveName">Save</button>
+      </div>
+      <label class="pm-label">Picture</label>
+      <div class="pm-row">
+        <input type="file" id="pmAvatarFile" accept="image/png,image/jpeg,image/webp,image/gif">
+        <button class="btn-mini danger" id="pmRemoveAvatar" hidden>Remove</button>
+      </div>
+      <p class="pm-hint" id="pmHint">PNG, JPEG, WebP or GIF, up to 2 MB.</p>
+      <button class="btn-mini" id="pmSignOut">Sign out</button>
+    </div>
   </div>
 </div>
 
