@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Go-Live Readiness Dashboard — Quote Management Programme</title>
+<title>Programme Dashboard</title>
 <style>
   :root{
     --navy:#272B5D; --navy-deep:#1B1E45; --sky:#36A8E1; --sky-pale:#EAF6FC;
@@ -33,8 +33,6 @@
      hidden on screen, where the topbar already carries the Felber logo. */
   .print-logos{display:none;}
   .footer-logo{height:16px; width:auto; vertical-align:middle; margin-right:6px;}
-  .brand-text h1{margin:0; font-size:16px; font-weight:700;}
-  .brand-text p{margin:1px 0 0; font-size:11.5px; color:#C7D3EE;}
   .topbar-controls{display:flex; align-items:center; gap:10px; flex-wrap:wrap;}
   .tb-field{display:flex; flex-direction:column; gap:2px;}
   .tb-field label{font-size:10px; text-transform:uppercase; letter-spacing:.5px; color:#BFD4F0; font-weight:700;}
@@ -429,10 +427,6 @@
 <div class="topbar">
   <div class="brand">
     <div class="brand-mark"><img id="brandLogo" alt="Felber Consulting"></div>
-    <div class="brand-text">
-      <h1>Go-Live Readiness Dashboard</h1>
-      <p>Felber Consulting · Quote Management Programme — NUE CPQ Platform Deployment</p>
-    </div>
   </div>
   <div class="topbar-controls">
     <div class="tb-field">
@@ -3516,7 +3510,7 @@ function renderDashboard(){
     </div>
 
     <div class="footer-strip">
-      <span><img src="${FELBER_LOGO}" class="footer-logo" alt="Felber Consulting">Felber Consulting — Go-Live Readiness Dashboard</span>
+      <span><img src="${FELBER_LOGO}" class="footer-logo" alt="Felber Consulting">Felber Consulting — ${esc(p.header.programme || "Programme Dashboard")}</span>
       <span>Commercial in Confidence — generated ${fmtDate(new Date())}</span>
     </div>
   `;
