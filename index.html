@@ -235,6 +235,15 @@
   .two-col{display:grid; grid-template-columns:1fr 1fr; gap:18px;}
   @media (max-width:900px){ .two-col{grid-template-columns:1fr;} }
   .bullets{margin:0; padding-left:18px; font-size:12.5px; line-height:1.7; color:#333;}
+  /* Editing a list: the marker goes, because a bullet beside a text box reads as clutter,
+     and each row becomes the item plus its controls. */
+  .bullets.editing{list-style:none; padding-left:0; display:flex; flex-direction:column; gap:6px;}
+  .bullets.editing li.item-edit{display:flex; gap:6px; align-items:flex-start;}
+  .bullets.editing textarea.dash-edit{flex:1; min-width:0; min-height:40px;}
+  .item-actions{display:flex; gap:3px; flex-shrink:0; padding-top:2px;}
+  .item-actions .btn-mini{padding:3px 6px; font-size:10px; line-height:1;}
+  .item-actions .btn-mini:disabled{opacity:.35; cursor:default; background:#fff; border-color:var(--border);}
+  @media print{ .bullets.editing{list-style:disc; padding-left:18px;} .item-actions{display:none !important;} }
 
   .footer-strip{background:var(--sky-pale); border:1px solid var(--border); border-radius:10px; padding:12px 20px; font-size:10.5px; color:var(--navy); font-weight:600; display:flex; justify-content:space-between; flex-wrap:wrap; gap:6px;}
 
@@ -2080,6 +2089,32 @@ function dSelect(type, i, field, value, opts){
     + opts.map(([v,l])=>`<option value="${esc(v)}" ${String(value)===String(v)?"selected":""}>${esc(l)}</option>`).join("")
     + `</select>`;
 }
+/* List sections render as plain bullets when reading and as a stack of editors when
+   "Edit on dashboard" is on. Tables already worked this way through de()/dsInput; lists
+   never did, so a section imported from a document could only be edited through the side
+   panel's one big textarea — workable for three bullets, not for a requirement with
+   twelve. Items are plain strings in sec.items, not objects in sec.rows, so they need
+   their own data attribute and their own branch in applyDashEdit. */
+function listItemsHtml(sec, si){
+  const items = Array.isArray(sec.items) ? sec.items : [];
+  if(!dashEdit){
+    return items.length
+      ? `<ul class="bullets">${items.map(it=>`<li>${esc(it)}</li>`).join("")}</ul>`
+      : `<div class="empty-note">No items yet.</div>`;
+  }
+  return `<ul class="bullets editing">${items.map((it, i)=>`
+      <li class="item-edit">
+        <textarea class="dash-edit" data-dsec="${si}" data-ditem="${i}"
+          aria-label="Item ${i + 1}">${esc(it)}</textarea>
+        <span class="item-actions no-print">
+          <button class="btn-mini" data-item-up="${si}" data-itemi="${i}" ${i === 0 ? "disabled" : ""} title="Move up">▲</button>
+          <button class="btn-mini" data-item-down="${si}" data-itemi="${i}" ${i === items.length - 1 ? "disabled" : ""} title="Move down">▼</button>
+          <button class="btn-mini danger" data-item-del="${si}" data-itemi="${i}" title="Delete this item">✕</button>
+        </span>
+      </li>`).join("")}</ul>
+    <button class="btn-mini no-print" data-item-add="${si}">+ Add item</button>`;
+}
+
 function dsInput(si, ri, field, value, kind){
   return `<input class="dash-edit" type="${kind||"text"}" data-dsec="${si}" data-dsubrow="${ri}" data-dsubfield="${esc(field)}" value="${esc(value ?? "")}">`;
 }
@@ -3108,7 +3143,7 @@ function renderCustomSection(sec, today){
         return `
           <div class="card">
             <div class="card-head"><h3>${esc(sec.title) || "Untitled section"}</h3><button class="btn-mini no-print" data-print-card="1" title="Print or save just this section as a PDF">Print section</button></div>
-            ${sec.items.length ? `<ul class="bullets">${sec.items.map(it=>`<li>${esc(it)}</li>`).join("")}</ul>` : `<div class="empty-note">No items yet.</div>`}
+            ${listItemsHtml(sec, si)}
           </div>`;
       }
       const showAppr = isApprovalSection(sec);
@@ -4888,6 +4923,13 @@ function applyDashEdit(t){
   if(t.dataset.dsec !== undefined){
     const sec = state.customSections[parseInt(t.dataset.dsec)];
     if(!sec) return false;
+    // A list item is a bare string, so it is addressed by index alone.
+    if(t.dataset.ditem !== undefined){
+      const i = parseInt(t.dataset.ditem);
+      if(!Array.isArray(sec.items) || i < 0 || i >= sec.items.length) return false;
+      sec.items[i] = t.value;
+      return true;
+    }
     const row = sec.rows && sec.rows[parseInt(t.dataset.dsubrow)];
     if(!row || !t.dataset.dsubfield) return false;
     row[t.dataset.dsubfield] = t.value;
@@ -4916,6 +4958,49 @@ dashEl.addEventListener("change", e=>{
   if(!t.classList || !t.classList.contains("dash-edit")) return;
   if(applyDashEdit(t)){ scheduleSave(); renderForm(); }
 });
+
+/* Structural edits to a list section. Typing is handled by the input listener, which
+   deliberately does NOT re-render so the caret stays put; these do re-render, because the
+   list is a different shape afterwards and the click has already taken focus off the text. */
+dashEl.addEventListener("click", (e)=>{
+  const btn = e.target.closest("[data-item-add], [data-item-up], [data-item-down], [data-item-del]");
+  if(!btn) return;
+  const d = btn.dataset;
+  const si = parseInt(d.itemAdd ?? d.itemUp ?? d.itemDown ?? d.itemDel);
+  const sec = state.customSections[si];
+  if(!sec) return;
+  if(!Array.isArray(sec.items)) sec.items = [];
+  const i = d.itemi === undefined ? -1 : parseInt(d.itemi);
+
+  if(d.itemAdd !== undefined){
+    sec.items.push("");
+  }else if(d.itemDel !== undefined){
+    // Short enough to retype, and the whole dashboard is undoable from a saved version,
+    // so deleting one bullet does not warrant a confirm on every click.
+    sec.items.splice(i, 1);
+  }else if(d.itemUp !== undefined && i > 0){
+    [sec.items[i - 1], sec.items[i]] = [sec.items[i], sec.items[i - 1]];
+  }else if(d.itemDown !== undefined && i < sec.items.length - 1){
+    [sec.items[i + 1], sec.items[i]] = [sec.items[i], sec.items[i + 1]];
+  }else{
+    return;
+  }
+
+  scheduleSave();
+  renderDashboard();
+  renderForm();   // the side panel holds the same items; keep the two in step
+
+  // Put the caret where the user will carry on typing: the new item, or the one they moved.
+  const focusAt = d.itemAdd !== undefined ? sec.items.length - 1
+    : d.itemUp !== undefined ? i - 1
+    : d.itemDown !== undefined ? i + 1
+    : -1;
+  if(focusAt >= 0){
+    const next = dashEl.querySelector(`[data-dsec="${si}"][data-ditem="${focusAt}"]`);
+    if(next) next.focus();
+  }
+});
+
 
 document.getElementById("btnNewProgramme").addEventListener("click", ()=>{ createProgramme(); });
 document.getElementById("btnDuplicateProgramme").addEventListener("click", ()=>{ duplicateProgramme(); });
