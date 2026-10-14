@@ -244,6 +244,7 @@
   .item-actions .btn-mini{padding:3px 6px; font-size:10px; line-height:1;}
   .item-actions .btn-mini:disabled{opacity:.35; cursor:default; background:#fff; border-color:var(--border);}
   .add-dash-row{margin-top:10px;}
+  .row-del{padding:2px 6px; font-size:10px; line-height:1;}
   @media print{ .bullets.editing{list-style:disc; padding-left:18px;} .item-actions{display:none !important;} }
 
   .footer-strip{background:var(--sky-pale); border:1px solid var(--border); border-radius:10px; padding:12px 20px; font-size:10.5px; color:var(--navy); font-weight:600; display:flex; justify-content:space-between; flex-wrap:wrap; gap:6px;}
@@ -2092,6 +2093,13 @@ function addRowControl(id, html){
   return /<\/div>\s*$/.test(html) ? html.replace(/<\/div>\s*$/, btn + "</div>") : html + btn;
 }
 
+/* A blank row for a custom status table. The edit panel and the dashboard both create
+   these, so like blankRowFor() it lives in one place — the panel and the section-creation
+   path had already drifted into two slightly different shapes. */
+function blankCustomRow(){
+  return {item:"", detail:"", status:"a", progress:"notstarted", owner:"", due:"", impact:""};
+}
+
 function blankRowFor(type){
     if(type==="readiness") return {area:"New area", rag:"a", evidence:"", mustClear:"", owner:""};
     if(type==="action") return {seq:state.recoveryActions.length+1, title:"New action", desc:"", status:"notstarted", rag:"g"};
@@ -3201,12 +3209,12 @@ function renderCustomSection(sec, today){
           </div>`;
       }
       const showAppr = isApprovalSection(sec);
-      const numCols = (sec.numbered ? 1 : 0) + (sec.priorityLayout ? 7 : 6) + (showAppr ? 1 : 0);
+      const numCols = (sec.numbered ? 1 : 0) + (sec.priorityLayout ? 7 : 6) + (showAppr ? 1 : 0) + (dashEdit ? 1 : 0);
       return `
         <div class="card">
           <div class="card-head"><h3>${esc(sec.title) || "Untitled section"}</h3><button class="btn-mini no-print" data-print-card="1" title="Print or save just this section as a PDF">Print section</button></div>
           <table>
-            <thead><tr>${sec.numbered ? `<th style="width:40px;">#</th>` : ""}<th>${sec.priorityLayout ? "Description" : "Item"}</th>${sec.priorityLayout ? `<th>Impact</th>` : ""}<th>RAG Status</th><th>Status</th><th style="width:92px;">${sec.priorityLayout ? "Date needs to be completed" : "Due"}</th><th>${sec.priorityLayout ? "Comments" : "Detail"}</th><th>Owner</th>${showAppr ? `<th style="width:150px;">Decision</th>` : ""}</tr></thead>
+            <thead><tr>${sec.numbered ? `<th style="width:40px;">#</th>` : ""}<th>${sec.priorityLayout ? "Description" : "Item"}</th>${sec.priorityLayout ? `<th>Impact</th>` : ""}<th>RAG Status</th><th>Status</th><th style="width:92px;">${sec.priorityLayout ? "Date needs to be completed" : "Due"}</th><th>${sec.priorityLayout ? "Comments" : "Detail"}</th><th>Owner</th>${showAppr ? `<th style="width:150px;">Decision</th>` : ""}${dashEdit ? `<th class="no-print" style="width:34px;"></th>` : ""}</tr></thead>
             <tbody>
               ${sec.rows.length ? sec.rows.map((r,i)=>`
                 <tr>
@@ -3219,9 +3227,11 @@ function renderCustomSection(sec, today){
                   <td>${de(esc(r.detail), dsArea(si, i, "detail", r.detail))}</td>
                   <td>${de(esc(r.owner), dsInput(si, i, "owner", r.owner))}</td>
                   ${showAppr ? `<td>${approvalCellHtml(sec, r, i)}</td>` : ""}
+                  ${dashEdit ? `<td class="no-print"><button class="btn-mini danger row-del" data-delrow-sec="${si}" data-delrow-i="${i}" title="Delete this row">✕</button></td>` : ""}
                 </tr>`).join("") : `<tr><td colspan="${numCols}" class="empty-note">No rows yet.</td></tr>`}
             </tbody>
           </table>
+          ${dashEdit ? `<button class="btn-mini add-dash-row no-print" data-dashaddrow="${si}">+ Add row</button>` : ""}
         </div>`;
 }
 
@@ -4390,7 +4400,7 @@ panel.addEventListener("click", e=>{
         { const sec = {id:Date.now(), type:"list", title, items:["First item"]};
           state.customSections.push(sec); state.sectionOrder.push(customOrderId(sec)); }
       } else {
-        { const sec = {id:Date.now(), type:"table", title, rows:[{item:"", detail:"", status:"a", progress:"notstarted", owner:""}]};
+        { const sec = {id:Date.now(), type:"table", title, rows:[blankCustomRow()]};
           state.customSections.push(sec); state.sectionOrder.push(customOrderId(sec)); }
       }
       renderForm(); renderDashboard();
@@ -4408,7 +4418,7 @@ panel.addEventListener("click", e=>{
   if(addRowBtn){
     const sec = state.customSections[parseInt(addRowBtn.dataset.addrowSec)];
     if(sec && sec.type === "table"){
-      sec.rows.push({item:"", detail:"", status:"a", progress:"notstarted", owner:"", due:"", impact:""});
+      sec.rows.push(blankCustomRow());
       renderForm(); renderDashboard();
     }
     return;
@@ -5004,6 +5014,36 @@ dashEl.addEventListener("change", e=>{
    deliberately does NOT re-render so the caret stays put; these do re-render, because the
    list is a different shape afterwards and the click has already taken focus off the text. */
 dashEl.addEventListener("click", (e)=>{
+  // Custom status tables: add a row, or delete one.
+  const addCustom = e.target.closest("[data-dashaddrow]");
+  if(addCustom){
+    const sec = state.customSections[parseInt(addCustom.dataset.dashaddrow)];
+    if(!sec || sec.type !== "table") return;
+    if(!Array.isArray(sec.rows)) sec.rows = [];
+    sec.rows.push(blankCustomRow());
+    scheduleSave(); renderDashboard(); renderForm();
+    const si = state.customSections.indexOf(sec);
+    const cell = dashEl.querySelector(`[data-dsec="${si}"][data-dsubrow="${sec.rows.length - 1}"][data-dsubfield="item"]`);
+    if(cell) cell.focus();
+    return;
+  }
+
+  const delCustom = e.target.closest("[data-delrow-sec]");
+  if(delCustom){
+    const sec = state.customSections[parseInt(delCustom.dataset.delrowSec)];
+    const i = parseInt(delCustom.dataset.delrowI);
+    if(!sec || !Array.isArray(sec.rows) || !sec.rows[i]) return;
+    // A blank row is a mis-click to undo, so it goes quietly. One with anything typed in
+    // it is work, and deleting it silently from a single ✕ would be too easy to do by
+    // accident — in a table of eleven immediate actions that matters.
+    const row = sec.rows[i];
+    const hasContent = ["item","detail","owner","due","impact"].some(f => String(row[f] || "").trim());
+    if(hasContent && !confirm(`Delete this row?\n\n${(row.item || "Untitled row").slice(0, 80)}`)) return;
+    sec.rows.splice(i, 1);
+    scheduleSave(); renderDashboard(); renderForm();
+    return;
+  }
+
   const addRow = e.target.closest("[data-dashadd]");
   if(addRow){
     const type = addRow.dataset.dashadd;
