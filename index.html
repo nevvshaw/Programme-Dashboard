@@ -245,6 +245,10 @@
   .item-actions .btn-mini:disabled{opacity:.35; cursor:default; background:#fff; border-color:var(--border);}
   .add-dash-row{margin-top:10px;}
   .row-del{padding:2px 6px; font-size:10px; line-height:1;}
+  /* The card head is title | status | Print section, with the status next to the title
+     it describes rather than pushed to the far edge beside an unrelated button. */
+  .sec-status-pill{margin-right:auto;}
+  select.sec-status{margin-right:auto; font-size:11px; padding:2px 5px; max-width:130px;}
   @media print{ .bullets.editing{list-style:disc; padding-left:18px;} .item-actions{display:none !important;} }
 
   .footer-strip{background:var(--sky-pale); border:1px solid var(--border); border-radius:10px; padding:12px 20px; font-size:10.5px; color:var(--navy); font-weight:600; display:flex; justify-content:space-between; flex-wrap:wrap; gap:6px;}
@@ -2096,6 +2100,32 @@ function addRowControl(id, html){
 /* A blank row for a custom status table. The edit panel and the dashboard both create
    these, so like blankRowFor() it lives in one place — the panel and the section-creation
    path had already drifted into two slightly different shapes. */
+/* A custom section can carry its own status, so progress is readable per requirement
+   rather than only per row. It reuses PROGRESS_OPTS — the same vocabulary and the same
+   pill styling the rows already use — rather than inventing a parallel set of words.
+
+   It is optional on purpose. A section with no status shows no pill, so the dashboards
+   already in use do not sprout a row of "Not Started" badges nobody asked for; the
+   selector is there in edit mode to set one. */
+function sectionStatusHtml(sec, si){
+  const v = sec.progress || "";
+  if(dashEdit){
+    return `<select class="dash-edit sec-status" data-dsec="${si}" data-dsecfield="progress" title="Status for this section">
+        <option value="">No status</option>
+        ${PROGRESS_OPTS.map(([val,label])=>`<option value="${esc(val)}" ${v===val?"selected":""}>${esc(label)}</option>`).join("")}
+      </select>`;
+  }
+  if(!v) return "";
+  const label = (PROGRESS_OPTS.find(o=>o[0]===v) || [,v])[1];
+  return `<span class="status-pill ${esc(v)} sec-status-pill">${esc(label)}</span>`;
+}
+
+function customCardHead(sec, si){
+  return `<div class="card-head"><h3>${esc(sec.title) || "Untitled section"}</h3>`
+    + sectionStatusHtml(sec, si)
+    + `<button class="btn-mini no-print" data-print-card="1" title="Print or save just this section as a PDF">Print section</button></div>`;
+}
+
 function blankCustomRow(){
   return {item:"", detail:"", status:"a", progress:"notstarted", owner:"", due:"", impact:""};
 }
@@ -2840,6 +2870,11 @@ function renderCustomSectionRows(){
           <span class="type-tag">List section</span>
           <label>Section title</label>
           <input type="text" data-sec="${si}" data-secfield="title" value="${esc(sec.title)}">
+          <label>Status</label>
+          <select data-sec="${si}" data-secfield="progress">
+            <option value="">No status</option>
+            ${PROGRESS_OPTS.map(([v,l])=>`<option value="${esc(v)}" ${(sec.progress||"")===v?"selected":""}>${esc(l)}</option>`).join("")}
+          </select>
           <label>Items (one per line)</label>
           <textarea data-sec="${si}" data-secfield="itemsText" rows="4">${esc(sec.items.join("\n"))}</textarea>
         </div>`;
@@ -2855,6 +2890,11 @@ function renderCustomSectionRows(){
         <span class="type-tag">Table section</span>
         <label>Section title</label>
         <input type="text" data-sec="${si}" data-secfield="title" value="${esc(sec.title)}">
+        <label>Status</label>
+        <select data-sec="${si}" data-secfield="progress">
+          <option value="">No status</option>
+          ${PROGRESS_OPTS.map(([v,l])=>`<option value="${esc(v)}" ${(sec.progress||"")===v?"selected":""}>${esc(l)}</option>`).join("")}
+        </select>
         ${sec.rows.map((row,ri)=>`
           <div class="sub-row-card">
             <div style="position:absolute; top:7px; right:7px; display:flex; align-items:center; gap:8px;">
@@ -3204,7 +3244,7 @@ function renderCustomSection(sec, today){
       if(sec.type === "list"){
         return `
           <div class="card">
-            <div class="card-head"><h3>${esc(sec.title) || "Untitled section"}</h3><button class="btn-mini no-print" data-print-card="1" title="Print or save just this section as a PDF">Print section</button></div>
+            ${customCardHead(sec, si)}
             ${listItemsHtml(sec, si)}
           </div>`;
       }
@@ -3212,7 +3252,7 @@ function renderCustomSection(sec, today){
       const numCols = (sec.numbered ? 1 : 0) + (sec.priorityLayout ? 7 : 6) + (showAppr ? 1 : 0) + (dashEdit ? 1 : 0);
       return `
         <div class="card">
-          <div class="card-head"><h3>${esc(sec.title) || "Untitled section"}</h3><button class="btn-mini no-print" data-print-card="1" title="Print or save just this section as a PDF">Print section</button></div>
+          ${customCardHead(sec, si)}
           <table>
             <thead><tr>${sec.numbered ? `<th style="width:40px;">#</th>` : ""}<th>${sec.priorityLayout ? "Description" : "Item"}</th>${sec.priorityLayout ? `<th>Impact</th>` : ""}<th>RAG Status</th><th>Status</th><th style="width:92px;">${sec.priorityLayout ? "Date needs to be completed" : "Due"}</th><th>${sec.priorityLayout ? "Comments" : "Detail"}</th><th>Owner</th>${showAppr ? `<th style="width:150px;">Decision</th>` : ""}${dashEdit ? `<th class="no-print" style="width:34px;"></th>` : ""}</tr></thead>
             <tbody>
@@ -4215,6 +4255,10 @@ panel.addEventListener("input", e=>{
     if(!sec) return;
     if(t.dataset.secfield === "title"){ sec.title = t.value; renderDashboard(); return; }
     if(t.dataset.secfield === "itemsText"){ sec.items = t.value.split("\n").map(s=>s.trim()).filter(Boolean); renderDashboard(); return; }
+    if(t.dataset.secfield === "progress"){
+      if(t.value) sec.progress = t.value; else delete sec.progress;
+      renderDashboard(); return;
+    }
     if(t.dataset.subrow !== undefined && t.dataset.subfield){
       const row = sec.rows[parseInt(t.dataset.subrow)];
       if(!row) return;
@@ -4974,6 +5018,12 @@ function applyDashEdit(t){
   if(t.dataset.dsec !== undefined){
     const sec = state.customSections[parseInt(t.dataset.dsec)];
     if(!sec) return false;
+    // A field on the section itself rather than on one of its rows.
+    if(t.dataset.dsecfield){
+      if(t.dataset.dsecfield === "progress" && !t.value) delete sec.progress;
+      else sec[t.dataset.dsecfield] = t.value;
+      return true;
+    }
     // A list item is a bare string, so it is addressed by index alone.
     if(t.dataset.ditem !== undefined){
       const i = parseInt(t.dataset.ditem);
