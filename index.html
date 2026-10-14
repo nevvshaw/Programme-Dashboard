@@ -243,6 +243,7 @@
   .item-actions{display:flex; gap:3px; flex-shrink:0; padding-top:2px;}
   .item-actions .btn-mini{padding:3px 6px; font-size:10px; line-height:1;}
   .item-actions .btn-mini:disabled{opacity:.35; cursor:default; background:#fff; border-color:var(--border);}
+  .add-dash-row{margin-top:10px;}
   @media print{ .bullets.editing{list-style:disc; padding-left:18px;} .item-actions{display:none !important;} }
 
   .footer-strip{background:var(--sky-pale); border:1px solid var(--border); border-radius:10px; padding:12px 20px; font-size:10.5px; color:var(--navy); font-weight:600; display:flex; justify-content:space-between; flex-wrap:wrap; gap:6px;}
@@ -2074,6 +2075,59 @@ function setDashEdit(on){
 
 /* Read-only markup, or an editor, depending on the mode. Keeps every cell's two
    forms side by side so they can't drift apart. */
+/* The shape of a new row for each kind of section. Lifted out of the edit panel's click
+   handler so the dashboard's own "Add row" creates rows identically — one definition, so
+   the two views cannot drift into producing different objects. */
+/* Puts an "Add row" button inside a section's card while editing. Done here, where the
+   sections are assembled, rather than in each of the fifteen renderers — the button is the
+   same everywhere and there is no reason to restate it. The row content of every section
+   was already editable in place; without this there was simply no way to create the first
+   row, and an empty section therefore looked like a broken one. */
+function addRowControl(id, html){
+  const type = dashEdit ? sectionAddType()[id] : null;
+  if(!type) return html;
+  const btn = `<button class="btn-mini add-dash-row no-print" data-dashadd="${esc(type)}">+ Add row</button>`;
+  // Sections close with the card's own </div>; slip the button in just before it so it
+  // sits inside the card rather than floating between two of them.
+  return /<\/div>\s*$/.test(html) ? html.replace(/<\/div>\s*$/, btn + "</div>") : html + btn;
+}
+
+function blankRowFor(type){
+    if(type==="readiness") return {area:"New area", rag:"a", evidence:"", mustClear:"", owner:""};
+    if(type==="action") return {seq:state.recoveryActions.length+1, title:"New action", desc:"", status:"notstarted", rag:"g"};
+    if(type==="workstream") return {ref:nextRef("workstreams"), name:"", lead:"", rag:"a", progress:"notstarted", percent:0, completionDate:"", milestone:"", commentary:""};
+    if(type==="stakeholder") return {ref:nextRef("stakeholders"), name:"", role:"", org:"", influence:"Medium", engagement:"a", contact:"", notes:""};
+    if(type==="risk") return {ref:nextRef("risks"), risk:"", impact:"Medium", mitigation:""};
+    if(type==="issue") return {ref:nextRef("issues"), issue:"", sev:"P2", rag:"r", progress:"notstarted", action:"", comments:""};
+    if(type==="defect") return {defectNo:"", description:"", severity:"P2", status:"open", owner:"", comments:"", resolutionDate:""};
+    if(type==="decision") return {title:"", detail:"", status:"Pending", due:""};
+    if(type==="ganttTrack") return {name:"New track", start:1, end:1};
+    if(type==="ganttGate") return {label:"New gate", date: state.ganttStartDate};
+    if(type==="customMetric") return {label:"New metric", value:0, note:""};
+    if(type==="criticalPath") return {title:"New critical path item", points:["First point"], clear:""};
+    if(type==="assumption") return {ref:nextRef("assumptions"), text:"New assumption"};
+    if(type==="dependency") return {ref:nextRef("dependencies"), text:"New dependency"};
+    if(type==="system") return {name:"New system", status:"notstarted"};
+  return null;
+}
+
+/* Section id -> the row type it holds, derived from ARR_MAP rather than restated, so a
+   new section type cannot be added in one place and forgotten here. The gantt is absent
+   on purpose: its bars are edited by dragging, not by adding blank rows.
+
+   Built on first use rather than at load: ARR_MAP is declared further down the file, and
+   reading it up here would be a temporal dead zone error that kills the rest of the
+   script. Deriving it lazily makes the order irrelevant. */
+let _sectionAddType = null;
+function sectionAddType(){
+  if(!_sectionAddType){
+    _sectionAddType = Object.fromEntries(
+      Object.entries(ARR_MAP).map(([type, arrName]) => [arrName, type])
+    );
+  }
+  return _sectionAddType;
+}
+
 function de(readOnly, editor){ return dashEdit ? editor : readOnly; }
 
 /* Editors are addressed exactly like the panel's rows — same data-type/field/index
@@ -3450,7 +3504,7 @@ function renderDashboard(){
               <td>${de(esc(w.milestone||""), dInput("workstream", i, "milestone", w.milestone||""))}</td>
               <td>${de(esc(w.commentary||""), dArea("workstream", i, "commentary", w.commentary||""))}</td>
             </tr>`;
-          }).join("") : `<tr><td colspan="9" class="empty-note">No workstreams yet. Add them in the edit panel.</td></tr>`}
+          }).join("") : `<tr><td colspan="9" class="empty-note">No workstreams yet.${dashEdit ? "" : " Turn on Edit on dashboard, or use the edit panel."}</td></tr>`}
         </tbody>
       </table>
     </div>`,
@@ -3471,7 +3525,7 @@ function renderDashboard(){
               <td>${de(`<span class="pill ${k.engagement||"a"}"><span class="dot"></span>${ENGAGEMENT_LABEL[k.engagement||"a"]}</span>`, dSelect("stakeholder", i, "engagement", k.engagement||"a", ENGAGE_OPTS))}</td>
               <td>${de(esc(k.contact||""), dInput("stakeholder", i, "contact", k.contact||""))}</td>
               <td>${de(esc(k.notes||""), dArea("stakeholder", i, "notes", k.notes||""))}</td>
-            </tr>`).join("") : `<tr><td colspan="8" class="empty-note">No stakeholders yet. Add them in the edit panel.</td></tr>`}
+            </tr>`).join("") : `<tr><td colspan="8" class="empty-note">No stakeholders yet.${dashEdit ? "" : " Turn on Edit on dashboard, or use the edit panel."}</td></tr>`}
         </tbody>
       </table>
     </div>`,
@@ -3589,7 +3643,7 @@ function renderDashboard(){
 
   const orderedSections = state.sectionOrder
     .filter(id => sectionHTML[id] && isSectionVisible(id))
-    .map(id => sectionHTML[id]())
+    .map(id => addRowControl(id, sectionHTML[id]()))
     .join("");
 
   // Shown in the collapsed header so the section still says how much is in it.
@@ -4343,22 +4397,9 @@ panel.addEventListener("click", e=>{
       return;
     }
 
-    const arr = state[ARR_MAP[type]];
-    if(type==="readiness") arr.push({area:"New area", rag:"a", evidence:"", mustClear:"", owner:""});
-    if(type==="action") arr.push({seq:arr.length+1, title:"New action", desc:"", status:"notstarted", rag:"g"});
-    if(type==="workstream") arr.push({ref:nextRef("workstreams"), name:"", lead:"", rag:"a", progress:"notstarted", percent:0, completionDate:"", milestone:"", commentary:""});
-    if(type==="stakeholder") arr.push({ref:nextRef("stakeholders"), name:"", role:"", org:"", influence:"Medium", engagement:"a", contact:"", notes:""});
-    if(type==="risk") arr.push({ref:nextRef("risks"), risk:"", impact:"Medium", mitigation:""});
-    if(type==="issue") arr.push({ref:nextRef("issues"), issue:"", sev:"P2", rag:"r", progress:"notstarted", action:"", comments:""});
-    if(type==="defect") arr.push({defectNo:"", description:"", severity:"P2", status:"open", owner:"", comments:"", resolutionDate:""});
-    if(type==="decision") arr.push({title:"", detail:"", status:"Pending", due:""});
-    if(type==="ganttTrack") arr.push({name:"New track", start:1, end:1});
-    if(type==="ganttGate") arr.push({label:"New gate", date: state.ganttStartDate});
-    if(type==="customMetric") arr.push({label:"New metric", value:0, note:""});
-    if(type==="criticalPath") arr.push({title:"New critical path item", points:["First point"], clear:""});
-    if(type==="assumption") arr.push({ref:nextRef("assumptions"), text:"New assumption"});
-    if(type==="dependency") arr.push({ref:nextRef("dependencies"), text:"New dependency"});
-    if(type==="system") arr.push({name:"New system", status:"notstarted"});
+    const row = blankRowFor(type);
+    if(!row) return;
+    state[ARR_MAP[type]].push(row);
     renderForm(); renderDashboard();
     return;
   }
@@ -4963,6 +5004,22 @@ dashEl.addEventListener("change", e=>{
    deliberately does NOT re-render so the caret stays put; these do re-render, because the
    list is a different shape afterwards and the click has already taken focus off the text. */
 dashEl.addEventListener("click", (e)=>{
+  const addRow = e.target.closest("[data-dashadd]");
+  if(addRow){
+    const type = addRow.dataset.dashadd;
+    const row = blankRowFor(type);
+    if(!row || !ARR_MAP[type]) return;
+    state[ARR_MAP[type]].push(row);
+    scheduleSave();
+    renderDashboard();
+    renderForm();
+    // Drop the caret into the first editable cell of the row just created.
+    const rows = state[ARR_MAP[type]];
+    const first = dashEl.querySelector(`[data-dtype="${type}"][data-di="${rows.length - 1}"]`);
+    if(first) first.focus();
+    return;
+  }
+
   const btn = e.target.closest("[data-item-add], [data-item-up], [data-item-down], [data-item-del]");
   if(!btn) return;
   const d = btn.dataset;
