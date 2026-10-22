@@ -1190,6 +1190,7 @@ function setSaveStatus(status){
     // nowhere but this tab. These messages must say that plainly rather than reassure.
     offline:"Offline — changes are NOT saved. Keep this tab open; it will retry.",
     expired:"Signed out — changes are NOT saved. Sign in again to save them.",
+    denied:"Not saved — your account cannot edit this programme.",
     conflict:"Someone else saved a newer version — your changes are NOT saved yet",
     error:"Save failed — changes are NOT saved. Keep this tab open and use “Save now”."
   };
@@ -1197,7 +1198,7 @@ function setSaveStatus(status){
   // The stylesheet only knows four looks (saved / error / pending / saving), so the
   // richer status vocabulary is mapped down onto those. Anything that isn't a clean
   // save renders as an error, because it's a problem the user needs to notice.
-  const FAILURES = ["error","offline","expired","conflict"];
+  const FAILURES = ["error","offline","expired","denied","conflict"];
   el.dataset.status = FAILURES.includes(status) ? "error" : status;
 }
 
@@ -1336,7 +1337,10 @@ function classifySaveError(err){
   if(!navigator.onLine) return "offline";
   const msg = String((err && (err.message || err.error_description)) || "").toLowerCase();
   if(msg.includes("jwt") || msg.includes("expired") || msg.includes("401")) return "expired";
-  if(msg.includes("row-level security") || msg.includes("policy")) return "expired";
+  // A row-level security refusal used to be reported as an expired session. It is not:
+  // the session is valid, the account simply is not allowed to do that. Telling someone
+  // to sign out and back in sends them round a loop that cannot fix it.
+  if(msg.includes("row-level security") || msg.includes("policy")) return "denied";
   if(msg.includes("failed to fetch") || msg.includes("network")) return "offline";
   return "error";
 }
@@ -1465,10 +1469,51 @@ async function loadState(){
     return "loaded";
   }
 
-  // Only the original dashboard auto-seeds. For any other slug a missing row means a
-  // mistyped or stale ?d= link, and silently creating a blank dashboard there would
-  // litter the picker with junk that nobody can delete from the UI.
-  if(DASHBOARD_SLUG !== DEFAULT_DASHBOARD_SLUG){
+  // Nothing came back. That is either "no such dashboard" or "you cannot see it" — RLS
+  // makes the two identical here, deliberately, so the app cannot be used to probe which
+  // customers exist.
+  //
+  // Before deciding, find out whether this account can see ANY programme at all. Someone
+  // who has just been given an account but no grant lands here, and the useful thing to
+  // tell them is that they have no programmes yet — not that their link is wrong, and
+  // certainly not that their session expired.
+  let visible = null;
+  try{
+    const { data: rows } = await sb.from("dashboards").select("slug").order("slug").limit(2);
+    visible = Array.isArray(rows) ? rows : null;
+  }catch(err){ /* non-fatal: fall through to the messages below */ }
+
+  if(visible && visible.length === 0){
+    const err = new Error("your account is signed in but has no programmes assigned yet. Ask an owner to grant you access.");
+    err.noAccess = true;
+    throw err;
+  }
+
+  // Granted exactly one programme and asked for a different one — almost always someone
+  // opening the bare URL, which defaults to a dashboard they were never given. Send them
+  // to the one they do have rather than showing an error they cannot act on. Redirecting
+  // rather than loading it under the wrong slug keeps the URL and the loaded programme in
+  // agreement, which the picker and every share link depend on.
+  if(visible && visible.length === 1 && visible[0].slug && visible[0].slug !== DASHBOARD_SLUG){
+    location.replace(location.pathname + "?d=" + encodeURIComponent(visible[0].slug));
+    // Hold here: the page is on its way out and must not fall through to an error.
+    await new Promise(()=>{});
+  }
+
+  // Only the original dashboard auto-seeds, and only for an owner. A non-owner reaching
+  // here is looking at a dashboard that exists but is hidden from them, and the seed
+  // attempt would be refused by RLS — which is what produced "your session has expired".
+  //
+  // Asked directly rather than read from isOwner: refreshOwnerFlag() runs after this
+  // function, so the flag is still false here even for an owner, and trusting it would
+  // stop a fresh deployment from ever seeding itself.
+  let ownerHere = false;
+  try{
+    const { data: ownerRow } = await sb.rpc("is_dashboard_owner");
+    ownerHere = !!ownerRow;
+  }catch(err){ ownerHere = false; }   // fail closed
+
+  if(DASHBOARD_SLUG !== DEFAULT_DASHBOARD_SLUG || !ownerHere){
     // Row-level security makes "doesn't exist" and "you can't see it" look identical
     // from here — deliberately, so the app can't be used to probe which customers
     // exist. The message therefore covers both.
@@ -2033,6 +2078,7 @@ function describeError(err){
   const status = classifySaveError(err);
   if(status === "offline") return "you appear to be offline. Check your connection and try again.";
   if(status === "expired") return "your session has expired. Sign out and back in, then try again.";
+  if(status === "denied") return "your account does not have permission for that. Ask an owner to check your access.";
   return (err && err.message) ? err.message : "unknown error.";
 }
 
